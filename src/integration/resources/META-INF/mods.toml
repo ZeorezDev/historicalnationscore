@@ -1,0 +1,13 @@
+modLoader="javafml"
+loaderVersion="[47,48)"
+license="GPL-3.0-only"
+[[mods]]
+modId="hn_integration_tests"
+version="0.1.0"
+displayName="Historical Nations Dedicated Server Tests"
+[[dependencies.hn_integration_tests]]
+modId="historical_nations"
+mandatory=true
+versionRange="[0.1.0]"
+ordering="AFTER"
+side="SERVER"

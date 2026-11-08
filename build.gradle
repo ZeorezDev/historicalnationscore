@@ -38,3 +38,17 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 jar.finalizedBy('reobfJar')
+
+// A separately packaged fixture exercises the release JAR on a stock dedicated server.
+sourceSets {
+    integration {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+    }
+}
+tasks.register('integrationJar', Jar) {
+    from sourceSets.integration.output
+    archiveBaseName = 'historical_nations-integration-tests'
+    destinationDirectory = layout.buildDirectory.dir('integration')
+}
+reobf { integrationJar {} }
+tasks.named('integrationJar') { finalizedBy 'reobfIntegrationJar' }
