@@ -8,6 +8,12 @@ group = 'dev.zeorez.historicalnations'
 version = '0.1.0'
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
+sourceSets {
+    integration {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+    }
+}
+
 minecraft {
     mappings channel: 'official', version: '1.20.1'
     runs {
@@ -17,7 +23,17 @@ minecraft {
                 historical_nations { source sourceSets.main }
             }
         }
-        client {}
+        client {
+            def testPlayer = project.findProperty('hnTestClient')
+            if (testPlayer) {
+                if (!(testPlayer in ['HnNetA', 'HnNetB'])) throw new GradleException('Use HnNetA or HnNetB')
+                workingDirectory project.file("run-${testPlayer}")
+                mods { hn_integration_tests { source sourceSets.integration } }
+                property 'hn.test.client', testPlayer
+                args '--username', testPlayer, '--width', '480', '--height', '270'
+                jvmArgs '-Xmx2G', '-XX:ActiveProcessorCount=4'
+            }
+        }
         server { args '--nogui' }
     }
 }
@@ -40,11 +56,6 @@ tasks.withType(JavaCompile).configureEach {
 jar.finalizedBy('reobfJar')
 
 // A separately packaged fixture exercises the release JAR on a stock dedicated server.
-sourceSets {
-    integration {
-        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
-    }
-}
 tasks.register('integrationJar', Jar) {
     from sourceSets.integration.output
     archiveBaseName = 'historical_nations-integration-tests'
@@ -52,3 +63,6 @@ tasks.register('integrationJar', Jar) {
 }
 reobf { integrationJar {} }
 tasks.named('integrationJar') { finalizedBy 'reobfIntegrationJar' }
+if (project.hasProperty('hnTestClient')) {
+    tasks.matching { it.name == 'runClient' }.configureEach { dependsOn integrationClasses }
+}

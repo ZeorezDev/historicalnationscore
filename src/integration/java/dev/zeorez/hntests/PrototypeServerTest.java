@@ -32,6 +32,22 @@ public final class PrototypeServerTest {
         String phase = System.getProperty("hn.test.phase", "");
         MinecraftServer server = event.getServer();
         if (ran || phase.isEmpty() || event.phase != TickEvent.Phase.END || server.getTickCount() < 40) return;
+        if (phase.equals("network")) {
+            var a = server.getPlayerList().getPlayerByName("HnNetA");
+            var b = server.getPlayerList().getPlayerByName("HnNetB");
+            var api = HistoricalNationsApi.get(server);
+            if (a != null && b != null && api.isTownMayor(a.getUUID())
+                    && api.getPlayerTown(a.getUUID()).equals(api.getPlayerTown(b.getUUID()))) {
+                LogUtils.getLogger().info("HN INTEGRATION PASS network");
+            } else if (server.getTickCount() < 12000) {
+                return;
+            } else {
+                LogUtils.getLogger().error("HN INTEGRATION FAIL network: timeout");
+            }
+            ran = true;
+            server.halt(false);
+            return;
+        }
         ran = true;
         try {
             var suite = new Suite(server);
