@@ -1,0 +1,30 @@
+modLoader="javafml"
+loaderVersion="[47,48)"
+license="GPL-3.0-only"
+
+[[mods]]
+modId="historical_nations"
+version="0.1.0"
+displayName="Historical Nations Core"
+description="World-specific towns, nations and citizenship for multiplayer servers."
+
+[[dependencies.historical_nations]]
+modId="forge"
+mandatory=true
+versionRange="[47.4.28,48)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.historical_nations]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1]"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.historical_nations]]
+modId="openpartiesandclaims"
+mandatory=true
+versionRange="[0.33.0]"
+ordering="AFTER"
+side="BOTH"

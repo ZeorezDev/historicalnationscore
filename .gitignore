@@ -1,0 +1,15 @@
+.gradle/
+build/
+out/
+bin/
+run/
+run-*/
+logs/
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+*.log
+hs_err_pid*

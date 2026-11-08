@@ -1,0 +1,68 @@
+plugins {
+    id 'java'
+    id 'net.minecraftforge.gradle' version '6.0.54'
+    id 'org.spongepowered.mixin' version '0.7.38'
+}
+
+group = 'dev.zeorez.historicalnations'
+version = '0.1.0'
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+sourceSets {
+    integration {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+    }
+}
+
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            mods {
+                historical_nations { source sourceSets.main }
+            }
+        }
+        client {
+            def testPlayer = project.findProperty('hnTestClient')
+            if (testPlayer) {
+                if (!(testPlayer in ['HnNetA', 'HnNetB'])) throw new GradleException('Use HnNetA or HnNetB')
+                workingDirectory project.file("run-${testPlayer}")
+                mods { hn_integration_tests { source sourceSets.integration } }
+                property 'hn.test.client', testPlayer
+                args '--username', testPlayer, '--width', '480', '--height', '270'
+                jvmArgs '-Xmx2G', '-XX:ActiveProcessorCount=4'
+            }
+        }
+        server { args '--nogui' }
+    }
+}
+
+repositories {
+    exclusiveContent {
+        forRepository { maven { url = 'https://chocolateminecraft.com/maven' } }
+        filter { includeGroup 'xaero.pac' }
+    }
+}
+
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.20.1-47.4.28'
+    implementation 'xaero.pac:open-parties-and-claims-forge-1.20.1:0.33.0:dev'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+jar.finalizedBy('reobfJar')
+
+// A separately packaged fixture exercises the release JAR on a stock dedicated server.
+tasks.register('integrationJar', Jar) {
+    from sourceSets.integration.output
+    archiveBaseName = 'historical_nations-integration-tests'
+    destinationDirectory = layout.buildDirectory.dir('integration')
+}
+reobf { integrationJar {} }
+tasks.named('integrationJar') { finalizedBy 'reobfIntegrationJar' }
+if (project.hasProperty('hnTestClient')) {
+    tasks.matching { it.name == 'runClient' }.configureEach { dependsOn integrationClasses }
+}
