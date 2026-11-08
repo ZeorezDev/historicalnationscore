@@ -21,6 +21,29 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     final Map<UUID, UUID> townNations = new HashMap<>();
     final Set<Invitation> townInvites = new LinkedHashSet<>();
     final Set<Invitation> nationInvites = new LinkedHashSet<>();
+    final Map<Territory.Location, Territory> territories = new LinkedHashMap<>();
+
+    public Territory territory(Territory.Location location) {
+        return territories.get(location);
+    }
+
+    public List<Territory.Location> territoryLocations(UUID town) {
+        return territories.entrySet().stream().filter(e -> e.getValue().town().equals(town))
+                .map(Map.Entry::getKey).toList();
+    }
+
+    public Set<Territory.Location> territoryLocations() {
+        return Set.copyOf(territories.keySet());
+    }
+
+    public void link(Territory.Location location, Territory territory) {
+        require(territories.putIfAbsent(location, territory) == null, "land_occupied");
+        setDirty();
+    }
+
+    public void unlink(Territory.Location location) {
+        if (territories.remove(location) != null) setDirty();
+    }
 
     record Invitation(UUID issuer, UUID recipient) {}
 
@@ -122,6 +145,7 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     public void transferMayor(UUID actor, UUID successor) {
         Town town = mayorTown(actor);
         require(!actor.equals(successor) && town.id().equals(playerTowns.get(successor)), "invalid_successor");
+        require(territoryLocations(town.id()).isEmpty(), "land_transfer");
         towns.put(town.id(), new Town(town.id(), town.name(), successor));
         setDirty();
     }
@@ -131,9 +155,14 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
         playerTowns.remove(actor);
         setDirty();
     }
-    public void disbandTown(UUID actor) {
+    public Town checkDisband(UUID actor) {
         Town town = mayorTown(actor);
         requireNonCapital(town);
+        return town;
+    }
+    public void disbandTown(UUID actor) {
+        Town town = checkDisband(actor);
+        require(territoryLocations(town.id()).isEmpty(), "land_remaining");
         towns.remove(town.id());
         playerTowns.values().removeIf(town.id()::equals);
         townNations.remove(town.id());

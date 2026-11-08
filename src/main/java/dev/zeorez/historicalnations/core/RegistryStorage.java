@@ -6,6 +6,7 @@ import dev.zeorez.historicalnations.api.Town;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceLocation;
 import org.slf4j.Logger;
 
 import java.util.*;
@@ -33,6 +34,16 @@ final class RegistryStorage {
         root.put("Affiliations", links(registry.townNations));
         root.put("TownInvites", invites(registry.townInvites));
         root.put("NationInvites", invites(registry.nationInvites));
+        ListTag territories = new ListTag();
+        registry.territories.forEach((location, territory) -> {
+            CompoundTag row = link(territory.town(), territory.owner());
+            row.putString("Dimension", location.dimension().toString());
+            row.putInt("X", location.x());
+            row.putInt("Z", location.z());
+            row.putInt("SubIndex", territory.subIndex());
+            territories.add(row);
+        });
+        root.put("Territories", territories);
         return root;
     }
 
@@ -109,6 +120,26 @@ final class RegistryStorage {
             if (registry.nations.containsKey(nation) && registry.towns.containsKey(town) && !registry.townNations.containsKey(town))
                 registry.nationInvites.add(new WorldRegistry.Invitation(nation, town));
         });
+        // An absent list is the v0.1.0 format. Conflicting duplicate rows grant no authority.
+        Set<Territory.Location> seen = new HashSet<>();
+        for (Tag entry : root.getList("Territories", Tag.TAG_COMPOUND)) {
+            CompoundTag row = (CompoundTag) entry;
+            var dimension = ResourceLocation.tryParse(row.getString("Dimension"));
+            if (dimension == null || dimension.getPath().isEmpty() || !row.contains("X", Tag.TAG_INT)
+                    || !row.contains("Z", Tag.TAG_INT)) continue;
+            var location = new Territory.Location(dimension, row.getInt("X"), row.getInt("Z"));
+            if (!seen.add(location)) {
+                registry.territories.remove(location);
+                LOG.warn("Ignoring duplicate Historical Nations territory {}", location);
+                continue;
+            }
+            if (!row.hasUUID("From") || !row.hasUUID("To") || !row.contains("SubIndex", Tag.TAG_INT)
+                    || row.getInt("SubIndex") < 0) continue;
+            Town town = registry.towns.get(row.getUUID("From"));
+            if (town != null && town.mayor().equals(row.getUUID("To"))) {
+                registry.territories.put(location, new Territory(town.id(), town.mayor(), row.getInt("SubIndex")));
+            }
+        }
         return registry;
     }
 
