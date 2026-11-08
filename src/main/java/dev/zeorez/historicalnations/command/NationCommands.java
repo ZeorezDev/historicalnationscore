@@ -13,6 +13,7 @@ import dev.zeorez.historicalnations.api.Town;
 import dev.zeorez.historicalnations.core.RuleViolation;
 import dev.zeorez.historicalnations.core.WorldRegistry;
 import dev.zeorez.historicalnations.integration.OpenPacClaims;
+import dev.zeorez.historicalnations.integration.TownTerritories;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.arguments.GameProfileArgument;
 import net.minecraft.network.chat.Component;
@@ -51,14 +52,32 @@ public final class NationCommands {
                 .stream().map(c::playerName).toList())))));
         town.then(literal("setmayor").then(argument("player", GameProfileArgument.gameProfile()).executes(run(c -> {
             GameProfile target = c.target();
-            c.data.transferMayor(c.id(), target.getId());
+            c.land().transferMayor(c.player, target.getId());
             return msg("new_mayor", target.getName());
         }))));
         town.then(literal("disband").executes(run(c -> {
-            c.data.disbandTown(c.id());
+            c.land().disband(c.player);
             return msg("town_disbanded");
         })));
         town.then(literal("claimstatus").executes(run(Context::claimStatus)));
+        town.then(literal("claim").executes(run(c -> {
+            c.land().claim(c.player);
+            return msg("land_claimed", c.data.home(c.id()).name());
+        })));
+        town.then(literal("unclaim").executes(run(c -> {
+            c.land().unclaim(c.player);
+            return msg("land_released");
+        })));
+        town.then(literal("claims").executes(run(c -> {
+            Town home = c.data.home(c.id());
+            return msg("land_count", home.name(), c.land().count(home.id()));
+        })));
+        town.then(literal("claiminfo").executes(run(c -> {
+            var pos = TownTerritories.location(c.player);
+            var link = c.land().verified(pos);
+            Component townName = link == null ? msg("none") : Component.literal(c.data.getTownById(link.town()).orElseThrow().name());
+            return msg("land_info", pos.dimension().toString(), pos.x(), pos.z(), townName);
+        })));
         dispatcher.register(town);
 
         var nation = literal("nation");
@@ -120,6 +139,7 @@ public final class NationCommands {
     private record Context(CommandContext<CommandSourceStack> command, ServerPlayer player, WorldRegistry data) {
         UUID id() { return player.getUUID(); }
         MinecraftServer server() { return command.getSource().getServer(); }
+        TownTerritories land() { return new TownTerritories(server()); }
 
         GameProfile target() throws CommandSyntaxException {
             Collection<GameProfile> profiles = GameProfileArgument.getGameProfiles(command, "player");

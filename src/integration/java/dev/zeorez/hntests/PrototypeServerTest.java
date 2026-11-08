@@ -4,17 +4,26 @@ import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.logging.LogUtils;
 import dev.zeorez.historicalnations.api.HistoricalNationsApi;
+import dev.zeorez.historicalnations.TerritoryConfig;
+import dev.zeorez.historicalnations.core.Territory.Location;
+import dev.zeorez.historicalnations.core.WorldRegistry;
+import net.minecraft.core.Direction;
 import net.minecraft.commands.CommandSource;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.fml.common.Mod;
 import xaero.pac.common.server.api.OpenPACServerAPI;
+import xaero.pac.common.server.config.ServerConfig;
+import xaero.pac.common.server.player.config.api.v2.PlayerConfigOptions;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -38,7 +47,12 @@ public final class PrototypeServerTest {
             var api = HistoricalNationsApi.get(server);
             if (a != null && b != null && api.isTownMayor(a.getUUID())
                     && api.getPlayerTown(a.getUUID()).equals(api.getPlayerTown(b.getUUID()))) {
-                LogUtils.getLogger().info("HN INTEGRATION PASS network");
+                try {
+                    new Suite(server).networkTerritory(a, b);
+                    LogUtils.getLogger().info("HN INTEGRATION PASS network");
+                } catch (Exception | AssertionError error) {
+                    LogUtils.getLogger().error("HN INTEGRATION FAIL network", error);
+                }
             } else if (server.getTickCount() < 12000) {
                 return;
             } else {
@@ -54,6 +68,8 @@ public final class PrototypeServerTest {
             switch (phase) {
                 case "setup" -> suite.setup();
                 case "verify" -> suite.verify();
+                case "territorySetup" -> suite.territorySetup();
+                case "territoryVerify" -> suite.territoryVerify();
                 default -> throw new IllegalArgumentException("Unknown test phase " + phase);
             }
             LogUtils.getLogger().info("HN INTEGRATION PASS {}", phase);
@@ -108,8 +124,134 @@ public final class PrototypeServerTest {
             }
             check(result != null && result.getContents() instanceof TranslatableContents, "No translated result: " + command);
             var translated = (TranslatableContents) result.getContents();
-            check(translated.getKey().equals("historical_nations." + resultKey), command + " returned " + translated.getKey());
+            String expected = resultKey.startsWith("gui.") ? resultKey : "historical_nations." + resultKey;
+            check(translated.getKey().equals(expected), command + " returned " + translated.getKey());
             return translated;
+        }
+
+        void networkTerritory(ServerPlayer mayor, ServerPlayer citizen) throws CommandSyntaxException {
+            var opac = OpenPACServerAPI.get(server);
+            var parties = opac.getPartyManager();
+            command(citizen, "town leave", "town_left");
+            var party = parties.createPartyForOwner(citizen);
+            check(party != null, "Personal OPAC party setup");
+            command(citizen, "town create Sinop", "town_created");
+            command(mayor, "town claim", "land_claimed");
+            checkBuild(mayor, citizen, true);
+            command(citizen, "town disband", "town_disbanded");
+            command(mayor, "town invite HnNetB", "invited");
+            command(citizen, "town accept Bursa", "town_joined");
+            checkBuild(mayor, citizen, false);
+            command(citizen, "town claim", "!mayor_only");
+            command(citizen, "town unclaim", "!mayor_only");
+            command(mayor, "town setmayor HnNetB", "!land_transfer");
+            check(api.isTownMayor(mayor.getUUID()), "Mayor changed after rejected transfer");
+            command(citizen, "town leave", "town_left");
+            checkBuild(mayor, citizen, true);
+            check(parties.getPartyByMember(citizen.getUUID()) == party, "Personal party changed");
+            command(mayor, "town unclaim", "land_released");
+            checkBuild(mayor, citizen, false);
+        }
+
+        void checkBuild(ServerPlayer mayor, ServerPlayer visitor, boolean blocked) {
+            var world = mayor.serverLevel();
+            var pos = mayor.blockPosition().below();
+            world.setBlockAndUpdate(pos, Blocks.STONE.defaultBlockState());
+            var protection = OpenPACServerAPI.get(server).getChunkProtection();
+            check(protection.onBlockInteraction(visitor, InteractionHand.MAIN_HAND, ItemStack.EMPTY, world,
+                    pos, Direction.UP, true, false, true) == blocked, "OPAC breaking, expected blocked=" + blocked);
+            check(protection.onEntityPlaceBlock(Blocks.STONE.defaultBlockState(), visitor, world, pos.above()) == blocked,
+                    "OPAC placement, expected blocked=" + blocked);
+        }
+
+        void territorySetup() throws CommandSyntaxException {
+            var dim = Level.OVERWORLD.location();
+            var claims = OpenPACServerAPI.get(server).getServerClaimsManager();
+            command(a, "town create Ankara", "town_created");
+            command(b, "town create Izmir", "town_created");
+            command(b, "nation create Ege", "nation_created");
+            a.setPos(-17, 80, 33);
+            command(a, "town claim", "land_claimed");
+            var primary = claims.get(dim, -2, 2);
+            check(primary != null && primary.getPlayerId().equals(a.getUUID()), "Missing physical claim");
+            command(a, "town claim", "!land_occupied");
+            b.setPos(-17, 80, 33);
+            command(b, "town claim", "!land_occupied");
+            command(b, "town unclaim", "!land_not_yours");
+            command(b, "nation invite Ankara", "invited");
+            command(a, "nation accept Ege", "nation_joined");
+            command(a, "nation leave", "nation_left");
+            command(b, "nation invite Ankara", "invited");
+            command(a, "nation accept Ege", "nation_joined");
+            command(b, "nation disband", "nation_disbanded");
+            check(claims.get(dim, -2, 2) == primary, "Nation membership changed physical claim");
+            var netherMayor = new FakePlayer(server.getLevel(Level.NETHER), a.getGameProfile());
+            netherMayor.setPos(-17, 80, 33);
+            command(netherMayor, "town claim", "land_claimed");
+            checkCount(a, 2);
+            a.setPos(-33, 80, 33);
+            int townLimit = TerritoryConfig.LIMIT.get();
+            check(townLimit == 16, "Unexpected default town limit");
+            int nativeLimit = ServerConfig.CONFIG.maxPlayerClaims.get();
+            try {
+                TerritoryConfig.LIMIT.set(2);
+                command(a, "town claim", "!land_limit");
+                TerritoryConfig.LIMIT.set(townLimit);
+                ServerConfig.CONFIG.maxPlayerClaims.set(2);
+                command(a, "town claim", "!gui.xaero_claims_claim_limit_reached");
+                check(claims.get(dim, -3, 2) == null, "Limit rejection wrote a claim");
+            } finally {
+                TerritoryConfig.LIMIT.set(townLimit);
+                ServerConfig.CONFIG.maxPlayerClaims.set(nativeLimit);
+            }
+            var config = OpenPACServerAPI.get(server).getPlayerConfigManager().getLoadedConfig(a.getUUID());
+            config.tryToSet(PlayerConfigOptions.ALLOWED_TO_CLAIM, false);
+            try {
+                command(a, "town claim", "!gui.xaero_claims_not_allowed_in_config");
+                check(claims.get(dim, -3, 2) == null, "OPAC permission rejection wrote a claim");
+            } finally {
+                config.tryToSet(PlayerConfigOptions.ALLOWED_TO_CLAIM, true);
+            }
+            command(a, "town claim", "land_claimed");
+            // Simulate a native unclaim and a personal reclaim at the same location.
+            var removed = claims.tryToUnclaim(dim, a.getUUID(), dim, -3, 2, -3, 2, false);
+            check(removed.getResultType() == xaero.pac.common.claims.result.api.ClaimResult.Type.SUCCESSFUL_UNCLAIM, "External unclaim");
+            check(claims.claim(dim, a.getUUID(), primary.getSubConfigIndex(), -3, 2, false) != null, "Personal reclaim");
+            checkCount(a, 2);
+            check(claims.claim(dim, b.getUUID(), 0, -4, 2, false) != null, "Foreign fixture claim");
+            a.setPos(-49, 80, 33);
+            command(a, "town claim", "!land_occupied");
+            // Persist a stale city relation over another player's real claim to exercise startup repair.
+            var registry = WorldRegistry.get(server);
+            registry.link(new Location(dim, -4, 2), registry.territory(new Location(dim, -2, 2)));
+        }
+
+        void territoryVerify() throws CommandSyntaxException {
+            var dim = Level.OVERWORLD.location();
+            var claims = OpenPACServerAPI.get(server).getServerClaimsManager();
+            check(WorldRegistry.get(server).territory(new Location(dim, -4, 2)) == null, "Startup left stale link");
+            checkCount(a, 2);
+            a.setPos(-17, 80, 33);
+            var info = command(a, "town claiminfo", "land_info");
+            check(((Component) info.getArgs()[3]).getString().equals("Ankara"), "Restart lost town identity");
+            checkClaim(a, "Ankara");
+            var netherMayor = new FakePlayer(server.getLevel(Level.NETHER), a.getGameProfile());
+            netherMayor.setPos(-17, 80, 33);
+            // From the Nether, normal OPAC checks reject releasing the Overworld chunk.
+            command(netherMayor, "town disband", "!gui.xaero_claims_claim_not_within_dimension");
+            check(api.isTownMayor(a.getUUID()), "Partial cleanup deleted the town");
+            if (claims.get(Level.NETHER.location(), -2, 2) != null)
+                command(netherMayor, "town unclaim", "land_released");
+            check(claims.get(Level.NETHER.location(), -2, 2) == null && claims.get(dim, -2, 2) != null, "Dimension mix-up");
+            checkCount(a, 1);
+            command(a, "town disband", "town_disbanded");
+            check(claims.get(dim, -2, 2) == null && api.getPlayerTown(a.getUUID()).isEmpty(), "Town cleanup");
+            check(claims.get(dim, -3, 2).getPlayerId().equals(a.getUUID()), "Removed former mayor's personal claim");
+            check(claims.get(dim, -4, 2).getPlayerId().equals(b.getUUID()), "Removed foreign claim");
+        }
+
+        void checkCount(ServerPlayer player, int expected) throws CommandSyntaxException {
+            check(command(player, "town claims", "land_count").getArgs()[1].equals(expected), "Expected " + expected + " town chunks");
         }
 
         void setup() throws CommandSyntaxException {

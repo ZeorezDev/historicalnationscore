@@ -33,6 +33,26 @@ Her istemci kendi `run-HnNetA` veya `run-HnNetB` klasörünü kullanır. İlk a�
 
 Ayrı bir test kurulumunda yalnız Historical Nations Core ile sunucuyu başlatın. Forge yüklemeyi durdurmalı ve gereken `openpartiesandclaims 0.33.0` sürümünü bildirmelidir.
 
+## v0.2.0 arazi testleri
+
+Aynı Forge ve OPAC sürümleriyle, boş bir test dünyasında `territorySetup` çalıştırın. Sunucu kapandığında aynı dünyayı `territoryVerify` ile açın. Örneğin Windows'ta:
+
+```powershell
+java -Xmx2G "-Dhn.test.phase=territorySetup" "@libraries/net/minecraftforge/forge/1.20.1-47.4.28/win_args.txt" --world hn-territory-test nogui
+java -Xmx2G "-Dhn.test.phase=territoryVerify" "@libraries/net/minecraftforge/forge/1.20.1-47.4.28/win_args.txt" --world hn-territory-test nogui
+```
+
+| Ortam | Sınanan davranış |
+| --- | --- |
+| `territorySetup`, dedicated server ve Forge test oyuncuları | Başkanın claim'i ve gerçek OPAC sahibi, dolu chunk çakışmaları, devlet üyeliği değişiklikleri, Overworld/Nether ayrımı, şehir ve OPAC kotaları, OPAC'nin oyuncuya claim yasağı, OPAC üzerinden kaldırılıp tekrar alınan kişisel claim. |
+| `territoryVerify`, ikinci sunucu süreci | Gerçek claim, şehir ve alt profil yeniden açılışta eşleşir. Başkasının claim'ine işaret eden yapay eski bağ başlangıçta temizlenir. Boyut kısıtlaması dağıtmayı durdurur, kalan arazi tekrar bırakılabilir. Başkanın ve başka bir oyuncunun kişisel claim'leri korunur. |
+| `network`, iki bağlı Forge istemcisi | İstemciler Bursa'yı kurar ve daveti kabul eder. Sunucu, bağlı oyuncularla yabancı, vatandaş ve eski vatandaş için OPAC'nin blok kırma ve yerleştirme kararlarını sınar. Vatandaş claim komutlarını kullanamaz. Arazili şehirde başkan devri reddedilir. Katılma ve ayrılma boyunca kişisel OPAC party kimliği korunur. |
+| v0.1.0 → v0.2.0 | Eski dağıtım ve test JAR'larıyla `setup` çalıştırılır. Aynı dünyada iki JAR da v0.2.0 ile değiştirilip `verify` çalıştırılır. Başkanlık, devlet, üyelik, bekleyen davetler ve kişisel OPAC claim'i doğrulanır. |
+
+Her aşamanın günlüğünde ilgili `HN INTEGRATION PASS` satırını arayın. Ağ senaryosu gerçek istemci bağlantıları ve komut paketleri kullanır. Blok izinleri bu oyuncularla sunucuda doğrudan OPAC'nin kırma ve yerleştirme arayüzüne sorulur.
+
+v0.2.0 doğrulamasında Java 17, Forge 47.4.28 ve OPAC 0.33.0 ile `PASS territorySetup`, `PASS territoryVerify` ve `PASS network` gözlendi. Ayrı yükseltme dünyasında v0.1.0 `PASS setup` sonucunu, ardından v0.2.0 aynı kayıtla `PASS verify` sonucunu verdi.
+
 ## v0.1.0 doğrulama kaydı
 
 | Deneme | Gözlenen sonuç |
