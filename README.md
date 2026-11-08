@@ -1,4 +1,4 @@
-# Historical Nations Core · v0.1.0 Prototype
+# Historical Nations Core · v0.2.0
 
 Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehirleri, devletleri ve vatandaşlığı yönetir. Oyuncular yönetim işlemlerini sohbet komutlarıyla yapar. Her dünya kaydı kendi şehir ve devlet verisini taşır.
 
@@ -14,7 +14,7 @@ Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehi
 ## Kurulum ve derleme
 
 1. JDK 17 ile `JAVA_HOME` ayarlayın. Depo kökünde Windows için `.\gradlew.bat build`, Linux veya macOS için `./gradlew build` çalıştırın.
-2. Forge 47.4.28 sunucusunun ve katılacak Forge istemcilerinin `mods/` klasörlerine `build/libs/historical_nations-0.1.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` dosyalarını koyun. OPAC ayrı dağıtılır. Forge eksik veya uyumsuz sürümü yükleme sırasında bildirir.
+2. Forge 47.4.28 sunucusunun ve katılacak Forge istemcilerinin `mods/` klasörlerine `build/libs/historical_nations-0.2.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` dosyalarını koyun. v0.1.0'dan yükseltirken sunucuyu kapatın, dünyayı yedekleyin ve eski Historical Nations JAR'ını yenisiyle değiştirin. Mevcut şehirler sıfır şehir arazisiyle başlar.
 3. Sunucuyu açın. Oyunda `/town list` ve `/town claimstatus` komutlarıyla kurulumu deneyin. Sohbet metinleri istemcinin dil ayarını izler.
 
 [Forge 1.20.1 indirmeleri](https://files.minecraftforge.net/net/minecraftforge/forge/index_1.20.1.html) · [Resmî OPAC 0.33.0 paketleri](https://chocolateminecraft.com/maven/xaero/pac/open-parties-and-claims-forge-1.20.1/0.33.0/)
@@ -33,6 +33,10 @@ Komutlar bir oyuncu adına çalışır. Şehir ve devlet adları 1–32 karakter
 | `/town setmayor <oyuncu>` | Belediye başkanlığını aynı şehrin başka bir vatandaşına devreder. |
 | `/town disband` | Belediye başkanı şehri dağıtır. Başkent için önce devlet dağıtılır. |
 | `/town claimstatus` | Bulunulan boyutu, chunk koordinatlarını, OPAC sahiplik durumunu ve sahibin şehir üyeliğini gösterir. |
+| `/town claim` | Belediye başkanı bulunduğu boş chunk'ı şehir arazisi olarak sahiplenir. |
+| `/town unclaim` | Belediye başkanı bulunduğu şehir chunk'ını bırakır. |
+| `/town claims` | Kendi şehrinizin tüm boyutlardaki doğrulanmış chunk sayısını gösterir. |
+| `/town claiminfo` | Bulunduğunuz chunk'ın doğrulanmış şehir adını gösterir. Kişisel claim'lerde şehir alanı boştur. |
 
 | Devlet komutu | Etki |
 | --- | --- |
@@ -65,7 +69,13 @@ API ayrıca `getTownById`, `getNationById`, `isTownMayor`, `getNationTowns` ve `
 
 ## OPAC entegrasyonu ve sınırlar
 
-Adaptör, aktif boyutun kimliğini ve oyuncunun `ChunkPos` değerini `OpenPACServerAPI.get(server).getServerClaimsManager().get(...)` çağrısına verir. Claim varsa OPAC sahibinin UUID'si ve mevcut adı gösterilir. “Sahibin vatandaş olduğu şehir” alanı oyuncunun kişisel üyeliğidir. Belediye başkanlığı ve vatandaşlık değişiklikleri OPAC mülkiyetini etkilemez.
+**Sahiplik ve kotalar.** OPAC'deki fiziksel sahip başkanın gerçek oyuncu UUID'sidir. OPAC'nin party modunda da claim, party sahibinin hesabına yazılır. Sunucu ve süresi dolmuş claim'ler için OPAC'nin özel kimlikleri vardır. Şehir kurmak bunlardan hiçbirini kullanmaz. İlk şehir claim'i için başkanın boş bir OPAC alt profil hakkı gerekir. HNC, şehir UUID'sinden türettiği `hn_` ön ekli profili kullanır. Başkanın kişisel claim'leriyle şehir claim'leri aynı OPAC kotasına sayılır. Dünya klasöründe `serverconfig/historical_nations-server.toml` içindeki `maxChunksPerTown` ayrıca şehir kotasını belirler (varsayılan 16).
+
+**Koruma ve vatandaşlık.** Normal oyuncu izin kontrolü ile OPAC'nin zorlamasız `tryToClaim` ve `tryToUnclaim` çağrıları geçerlidir. Alınmış chunk'ları dönüştürmek için önce mevcut sahip OPAC üzerinden bırakmalıdır. Bir şehre katılan oyuncu, doğrulanmış şehir chunk'larında OPAC'nin erişim eklentisi üzerinden inşa hakkı kazanır. Ayrıldığında bu hak biter. OPAC'nin ayrıca tanıdığı kişisel izinler, yönetici yetkisi ve koruma ayarları geçerlidir. Başkan şehir profilinin korumasını açık tutmalıdır. OPAC birincil party üyeliğini kendi yönetir. HNC şehirler için party kurmadığından davet kabulü mevcut party üyelikleriyle çakışmaz. Devlet liderliği ayrıca inşa hakkı vermez.
+
+**Başkan devri ve şehir dağıtma.** OPAC 0.33.0 çok sayıda claim'i yeni başkana tek işlemde, iki oyuncunun kotalarını ve kişisel claim'lerini koruyarak aktaramıyor. Bu nedenle önce şehrin arazilerini bırakın, sonra başkanlığı devredin. Şehri dağıtırken HNC yalnızca doğrulanmış şehir arazilerini bırakır. Başka boyut, mesafe veya anchor kısıtlaması temizliği durdurursa şehir varlığını sürdürür. İlgili konuma gidip kalan arazileri bırakabilir ve komutu yeniden çalıştırabilirsiniz. OPAC alt profili kişisel kullanım ihtimali nedeniyle otomatik silinmez. Devlete katılma, ayrılma ve devletin dağılması şehir arazilerini etkilemez.
+
+**Kayıt ve kurtarma.** Her ilişki boyut, chunk X/Z, şehir UUID'si, sahip UUID'si ve OPAC alt profil indeksini taşır. Başlangıçta ve kullanım sırasında canlı OPAC kaydı ile profil karşılaştırılır. OPAC üzerinden kaldırılan veya sahipliği değişen claim'in şehir bağı temizlenir. Kesinti sonrası yalnızca OPAC'de kalan claim kişisel kalır. Yalnızca HNC'de kalan bağlantı kaldırılır. Yedekten geri yüklerken tüm dünya klasörünü aynı tarihten alın.
 
 Gradle, Mojang mappings için OPAC'nin resmî `:dev` paketini ve MixinGradle kullanır. Sunucuya normal OPAC paketi kurulur. [İncelenen 1.20 kaynak sürümü](https://github.com/thexaero/open-parties-and-claims/tree/fd12115e97af9642005742da9586939e9803a327) · [OPAC API belgeleri](https://thexaero.github.io/open-parties-and-claims/javadoc/) · [Forge SavedData](https://docs.minecraftforge.net/en/1.20.1/datastorage/saveddata/)
 
@@ -75,7 +85,6 @@ Gradle, Mojang mappings için OPAC'nin resmî `:dev` paketini ve MixinGradle kul
 
 ## Yol haritası
 
-- **İkinci aşama • şehir ve arazi.** Kalıcı şehir UUID'si ile OPAC party kimliği için açık bir eşleme tasarlanacak. Belediye başkanı değişimi, vatandaşların giriş/çıkışı, mevcut OPAC party üyelikleri ve sunucunun party/claim limitleri ayrı ayrı sınanacak. Hak aktarımı için iki sistemde yarım kalan bir işlem yeniden başlatmada tespit edilip güvenli biçimde tamamlanabilmeli.
 - **Sonraki sürümler.** Pasaport ve belge modları salt okunur vatandaşlık API'sine bağlanabilir. Ekonomi, seçimler ve diplomasi sonraki sürümlerin kapsamındadır.
 
 ## Lisans
