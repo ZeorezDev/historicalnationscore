@@ -20,6 +20,8 @@ final class RegistryStorage {
         for (Town town : registry.towns.values()) {
             CompoundTag row = identity(town.id(), town.name());
             row.putUUID("Mayor", town.mayor());
+            if (registry.deputy(town.id()) != null) row.putUUID("Deputy", registry.deputy(town.id()));
+            row.putString("Description", registry.description(town.id()));
             towns.add(row);
         }
         ListTag nations = new ListTag();
@@ -44,6 +46,7 @@ final class RegistryStorage {
             territories.add(row);
         });
         root.put("Territories", territories);
+        registry.properties.save(root);
         return root;
     }
 
@@ -108,6 +111,16 @@ final class RegistryStorage {
         readLinks(root, "Citizens", (player, town) -> {
             if (registry.towns.containsKey(town)) registry.playerTowns.putIfAbsent(player, town);
         });
+        for (Tag entry : root.getList("Towns", Tag.TAG_COMPOUND)) {
+            CompoundTag row = (CompoundTag) entry;
+            if (!row.hasUUID("Id") || !registry.towns.containsKey(row.getUUID("Id"))) continue;
+            UUID city = row.getUUID("Id");
+            if (row.hasUUID("Deputy") && city.equals(registry.playerTowns.get(row.getUUID("Deputy")))
+                    && !registry.towns.get(city).mayor().equals(row.getUUID("Deputy")))
+                registry.deputies.put(city, row.getUUID("Deputy"));
+            String text = row.getString("Description");
+            if (!text.isBlank() && text.length() <= 256) registry.descriptions.put(city, text);
+        }
         readLinks(root, "Affiliations", (town, nation) -> {
             if (registry.towns.containsKey(town) && registry.nations.containsKey(nation))
                 registry.townNations.putIfAbsent(town, nation);
@@ -140,6 +153,8 @@ final class RegistryStorage {
                 registry.territories.put(location, new Territory(town.id(), town.mayor(), row.getInt("SubIndex")));
             }
         }
+        registry.properties.load(root);
+        if (!root.contains("Plots") && !registry.territories.isEmpty()) registry.setDirty();
         return registry;
     }
 

@@ -27,5 +27,6 @@ public final class HistoricalNations {
 
     private void registerCommands(RegisterCommandsEvent event) {
         NationCommands.register(event.getDispatcher());
+        dev.zeorez.historicalnations.property.PropertyCommands.register(event.getDispatcher());
     }
 }

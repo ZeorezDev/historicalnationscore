@@ -1,4 +1,14 @@
 {
+  "historical_nations.parcel_land": "Doğrulanmış şehir arazisine geçin.",
+  "historical_nations.parcel_manage": "Bu işlem için mülk sahibi veya yetkili yönetici olmalısınız.",
+  "historical_nations.quarter_missing": "Bu konumda alt parsel yok.",
+  "historical_nations.group_missing": "Plot grubu bulunamadı.",
+  "historical_nations.parcel_info": "%1$s (%2$s) | Sahip: %3$s | Teklif: %4$s | Grup: %5$s | %6$s | Kimlik: %7$s | Güvenilen: %8$s | İzinler: %9$s | Hacimler: %10$s",
+  "historical_nations.parcel_membership": "Tahsis ve güven için vatandaşlık gerekir. Elçilikler başka şehirlerden vatandaş kabul eder.",
+  "historical_nations.no_offer": "Bu parsel tahsise açık değil.",
+  "historical_nations.no_economy": "Ücretli satış için ekonomi sağlayıcısı gerekir. Sıfır fiyat ücretsiz tahsistir.",
+  "historical_nations.updated": "Güncellendi.",
+  "historical_nations.invalid_text": "Metin veya uzunluk geçersiz.",
   "historical_nations.land_occupied": "Bu chunk zaten sahiplenilmiş.",
   "historical_nations.land_limit": "Şehriniz arazi sınırına ulaştı.",
   "historical_nations.land_profile": "Korumalı bir OPAC şehir alt profili gerekiyor. Koruma ayarını ve alt profil kotasını kontrol edin.",
@@ -44,7 +54,7 @@
   "historical_nations.single_player": "Bir oyuncu seçin.",
   "historical_nations.none": "Yok",
   "historical_nations.independent": "Bağımsız",
-  "historical_nations.town_info": "%1$s | Belediye başkanı: %2$s | Vatandaş: %3$s | Devlet: %4$s",
+  "historical_nations.town_info": "%1$s | Belediye başkanı: %2$s | Vatandaş: %3$s | Devlet: %4$s | Yardımcı: %5$s | %6$s",
   "historical_nations.nation_info": "%1$s | Başkent: %2$s | Lider: %3$s | Şehir sayısı: %4$s",
   "historical_nations.claimed": "%1$s [%2$s, %3$s] | Sahiplenilmiş | OPAC sahibi: %4$s (%5$s) | Sahibin vatandaş olduğu şehir: %6$s",
   "historical_nations.unclaimed": "%1$s [%2$s, %3$s] | Sahipsiz | OPAC sahibi: yok | Sahibin vatandaş olduğu şehir: yok"
