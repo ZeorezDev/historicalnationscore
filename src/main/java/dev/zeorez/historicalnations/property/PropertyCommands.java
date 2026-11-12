@@ -110,7 +110,9 @@ public final class PropertyCommands {
         groups.then(literal("leave").executes(run(false, c -> { c.manage(); c.plot.land.group = ""; return c.changed(); })));
         plot.then(groups);
         commands.register(plot);
-        // Quarter geometry uses the same allocation and permission commands.
+        var quarter = common(true);
+        QuarterCommands.register(quarter);
+        commands.register(quarter);
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> common(boolean q) {
@@ -155,6 +157,7 @@ public final class PropertyCommands {
             return c.changed();
         }));
 
+        if (q) QuarterCommands.settings(set);
         root.then(set);
         root.then(literal("evict").executes(run(q,c -> { c.manage(); c.parcel().assign(null); return c.changed(); })));
         root.then(literal("unclaim").executes(run(q,c -> { c.edit().assign(null); return c.changed(); })));

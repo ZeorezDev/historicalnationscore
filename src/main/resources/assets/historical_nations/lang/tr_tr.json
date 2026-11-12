@@ -1,4 +1,12 @@
 {
+  "historical_nations.wand": "Alt parsel seçim aracı",
+  "historical_nations.wand_help": "İlk köşeye sol, ikinci köşeye sağ tıklayın.",
+  "historical_nations.corner": "Köşe %s: %s",
+  "historical_nations.inventory_full": "Envanteriniz dolu.",
+  "historical_nations.quarter_limit": "Parsel veya hacim adedi sınırına ulaşıldı.",
+  "historical_nations.invalid_selection": "Bu plot içinde yükseklik ve hacim sınırlarına uygun iki köşe seçin.",
+  "historical_nations.quarter_overlap": "Bu hacim başka bir seçimle kesişiyor.",
+  "historical_nations.boundary": "%s sınırları gösteriliyor.",
   "historical_nations.parcel_land": "Doğrulanmış şehir arazisine geçin.",
   "historical_nations.parcel_manage": "Bu işlem için mülk sahibi veya yetkili yönetici olmalısınız.",
   "historical_nations.quarter_missing": "Bu konumda alt parsel yok.",

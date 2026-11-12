@@ -1,4 +1,12 @@
 {
+  "historical_nations.wand": "Quarter selection wand",
+  "historical_nations.wand_help": "Left-click the first corner and right-click the second.",
+  "historical_nations.corner": "Corner %s: %s",
+  "historical_nations.inventory_full": "Your inventory is full.",
+  "historical_nations.quarter_limit": "Quarter or cuboid limit reached.",
+  "historical_nations.invalid_selection": "Select two corners inside this plot and within the build height and volume limits.",
+  "historical_nations.quarter_overlap": "This cuboid overlaps another selection.",
+  "historical_nations.boundary": "Showing the boundaries of %s.",
   "historical_nations.parcel_land": "Stand inside verified town land.",
   "historical_nations.parcel_manage": "Only the owner or municipal land administrator can do that.",
   "historical_nations.quarter_missing": "No quarter at this position.",
