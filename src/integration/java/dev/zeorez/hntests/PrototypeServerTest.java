@@ -33,6 +33,8 @@ import java.util.UUID;
 @Mod("hn_integration_tests")
 public final class PrototypeServerTest {
     private boolean ran;
+    private boolean saleOffered;
+    private int saleTick;
 
     public PrototypeServerTest() {
         MinecraftForge.EVENT_BUS.addListener(this::tick);
@@ -48,7 +50,29 @@ public final class PrototypeServerTest {
             if (a != null && b != null && api.isTownMayor(a.getUUID())
                     && api.getPlayerTown(a.getUUID()).equals(api.getPlayerTown(b.getUUID()))) {
                 try {
-                    new Suite(server).networkTerritory(a, b);
+                    var suite = new Suite(server);
+                    var apiMoney = dev.zeorez.historicalnations.api.EconomyApi.get(server);
+                    var town = api.getPlayerTown(a.getUUID()).orElseThrow();
+                    if (!saleOffered) {
+                        suite.command(a,"town claim","land_claimed");
+                        suite.command(a,"plot forsale 15","updated");
+                        b.teleportTo(a.serverLevel(), a.getX(), a.getY(), a.getZ(), 0, 0);
+                        EconomyTest.operator(server,"give player HnNetA 20 race");
+                        EconomyTest.operator(server,"give player HnNetB 20 race");
+                        saleOffered = true;
+                        saleTick = server.getTickCount();
+                        for (var bidder : java.util.List.of(a,b))
+                            bidder.sendSystemMessage(Component.literal("HN_TEST_BID"));
+                        return;
+                    }
+                    // Each client acknowledges its claim packet with a one-unit deposit on the same connection.
+                    if (apiMoney.getTownBalance(town.id()) != 17 && server.getTickCount() - saleTick < 1200) return;
+                    var title = dev.zeorez.historicalnations.api.Parcels.plot(server,a.level().dimension().location(),a.blockPosition()).orElseThrow();
+                    check(title.price() == null && (a.getUUID().equals(title.owner()) || b.getUUID().equals(title.owner())), "race winner");
+                    check(apiMoney.getTownBalance(town.id()) == 17 && apiMoney.getBalance(title.owner()) == 4
+                            && apiMoney.getBalance(title.owner().equals(a.getUUID()) ? b.getUUID() : a.getUUID()) == 19, "race charged exactly once");
+                    suite.command(a,"town unclaim","land_released");
+                    suite.networkTerritory(a, b);
                     LogUtils.getLogger().info("HN INTEGRATION PASS network");
                 } catch (Exception | AssertionError error) {
                     LogUtils.getLogger().error("HN INTEGRATION FAIL network", error);
@@ -73,6 +97,8 @@ public final class PrototypeServerTest {
                 case "municipalSetup" -> new MunicipalTest(suite).setup();
                 case "municipalVerify" -> new MunicipalTest(suite).verify();
                 case "boundaries" -> new MunicipalTest(suite).boundaries();
+                case "economySetup" -> new EconomyTest(suite).setup();
+                case "economyVerify" -> new EconomyTest(suite).verify();
                 default -> throw new IllegalArgumentException("Unknown test phase " + phase);
             }
             LogUtils.getLogger().info("HN INTEGRATION PASS {}", phase);

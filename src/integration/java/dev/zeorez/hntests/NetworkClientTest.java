@@ -51,6 +51,11 @@ public final class NetworkClientTest {
 
     @SubscribeEvent
     public static void message(ClientChatReceivedEvent.System event) {
+        if (!ACTOR.isEmpty() && event.getMessage().getString().equals("HN_TEST_BID")) {
+            var connection = Minecraft.getInstance().getConnection();
+            connection.sendCommand("plot claim");
+            connection.sendCommand("town bank deposit 1");
+        }
         if (!(event.getMessage().getContents() instanceof TranslatableContents text)) return;
         if (ACTOR.equals("HnNetA") && text.getKey().equals("historical_nations.town_created"))
             pending = "town invite HnNetB";

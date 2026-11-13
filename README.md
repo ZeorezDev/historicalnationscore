@@ -1,4 +1,4 @@
-# Historical Nations Core · v0.3.0
+# Historical Nations Core · v0.4.0
 
 Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehirleri, devletleri ve vatandaşlığı yönetir. Oyuncular yönetim işlemlerini sohbet komutlarıyla yapar. Her dünya kaydı kendi şehir ve devlet verisini taşır.
 
@@ -14,7 +14,7 @@ Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehi
 ## Kurulum ve derleme
 
 1. JDK 17 ile `JAVA_HOME` ayarlayın. Depo kökünde Windows için `.\gradlew.bat build`, Linux veya macOS için `./gradlew build` çalıştırın.
-2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-0.3.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
+2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-0.4.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
 3. Sunucuyu açın. Oyunda `/town list` ve `/town claimstatus` komutlarıyla kurulumu deneyin. Sohbet metinleri istemcinin dil ayarını izler.
 
 [Forge 1.20.1 indirmeleri](https://files.minecraftforge.net/net/minecraftforge/forge/index_1.20.1.html) · [Resmî OPAC 0.33.0 paketleri](https://chocolateminecraft.com/maven/xaero/pac/open-parties-and-claims-forge-1.20.1/0.33.0/)
@@ -49,6 +49,28 @@ Komutlar bir oyuncu adına çalışır. Şehir ve devlet adları 1–32 karakter
 
 Davetler yeniden başlatmada korunur. Bir oyuncu şehre, bir şehir devlete katıldığında aynı alıcıya gönderilmiş diğer davetler temizlenir. Başkent belediye başkanlığı devredildiğinde devlet liderliği de devredilir.
 
+## Ekonomi ve bankacılık
+
+`/money` bakiyenizi gösterir. Örneğin `/money pay Ayse 25` hesabınızdan Ayşe’ye 25 tam birim aktarır. Dünya klasöründeki `serverconfig/historical_nations-server.toml` dosyasında `currencyName` ve `currencySymbol` varsayılan olarak Lira ve ₺ değerlerini alır. `startingBalance` varsayılanı sıfırdır. Ayar, her oyuncunun v0.4.0 ile ilk girişinde bir kez uygulanır. Eski dünyalardaki şehirler, üyelikler ve satış teklifleri korunur. Mevcut pozitif fiyatlı ilanlar yükseltmeyle satın alınabilir.
+
+| Komut | Kullanım |
+| --- | --- |
+| `/town bank`, `/nation bank` | Kendi belediyenizin veya devletinizin bakiyesini gösterir. |
+| `bank deposit <tutar>`, `bank withdraw <tutar>` | İki komut kökünde üyeler yatırabilir. Şehirden başkan, devletten başkent belediye başkanı çekebilir. |
+| `/town bank history`, `/nation bank history` | Hesabın son 32 kaydını zaman, yetkili, hesaplar, tutar ve gerekçeyle gösterir. |
+| `/town tax [set <tutar>]`, `/nation tax [set <tutar>]` | Günlük sabit vergiyi gösterir. İlgili lider tutarı değiştirir. Başkandan da vatandaş vergisi, başkentten de devlet vergisi alınır. |
+| `/town upkeep [set <tutar>]`, `/nation upkeep [set <tutar>]` | Kurumun günlük bakım giderini gösterir veya değiştirir. |
+| `/economy give\|take\|set <player\|town\|nation> <hedef> <tutar> [gerekçe]` | Konsol veya seviye 2 operatör hesabı düzenleyebilir. Örnek: `/economy give town "Yeni Ankara" 100 kuruluş desteği`. |
+| `/economy info <player\|town\|nation> <hedef>` | Operatöre hedefin bakiyesini ve geçmişini gösterir. |
+
+Vergi ve bakım sıfırla başlar. Sunucu, UTC takvim günü değiştiğinde sırayla vatandaş vergilerini, üye şehir vergilerini ve bakım giderlerini işler. Kapatıldığı günleri topluca tahsil etmez. Tam ödenemeyen işlem için para kesilmez. İlgili hesaplara eksik tahsilat yazılır ve çevrimiçi ilgili oyunculara haber verilir. Son işlenen gün ve bakiyeler aynı dünya kaydında tutulur.
+
+Şehir ve devlet bakiyeleri kurumun UUID’sine bağlıdır. `bankLiquidation = "REQUIRE_EMPTY"` bakiyeli bir kurumun dağıtılmasını önler. `"PAY_LEADER"` kalan tutarı güncel lidere aktarır. Alıcının bakiyesi taşacaksa işlem durur. Belediye başkanlığı devri ve devlet üyeliği değişikliklerinde hesap korunur.
+
+Diğer modlar sunucu iş parçacığında `EconomyApi.get(server)` üzerinden `getBalance(UUID)`, `getTownBalance(UUID)` ve `getNationBalance(UUID)` çağrılarını kullanabilir. `transfer(ServerPlayer, UUID, long)` oyuncular arası ödeme yapar. `deposit(ServerPlayer, EconomyApi.Bank, long)` ve `withdraw(ServerPlayer, EconomyApi.Bank, long)` mevcut fonları kişisel hesap ile oyuncunun bağlı olduğu kurum arasında taşır. Banka seçenekleri `TOWN` ve `NATION` değerleridir. Yetersiz bakiye, geçersiz tutar veya yetki durumunda `RuleViolation` döner. API üzerinden para basma işlemi sunulmaz.
+
+Historical Documents 0.3.0 dağıtım JAR’ı Core sürümünü tam olarak 0.2.0’a sabitler. İki modu birlikte kurmak için Documents paketinin bağımlılık aralığının Core 0.4.0’ı kapsaması gerekir.
+
 ## Belediye, plot ve alt parsel komutları
 
 Başkan `/town deputy set <oyuncu>` ve `/town deputy remove` ile bir vatandaşını yardımcı atayabilir veya görevden alabilir. Başkan ve yardımcısı `/town invite`, `/town kick <oyuncu>`, `/town description set <metin>` ve `/town description clear` kullanabilir. Başkanın görev devri ve şehir dağıtma yetkileri kendisinde kalır. `/town info` yardımcıyı ve açıklamayı gösterir.
@@ -64,7 +86,7 @@ Her plot bir doğrulanmış şehir chunk’ıdır. Her quarter tek plot içindek
 | --- | --- |
 | `/plot info`, `/quarter info` | Ad, tür, UUID, sahip, teklif, grup, açıklama, ayarlanmış izinler ve hacim sayısı. |
 | `set name <ad>`, `set type <tür>`, `set owner <oyuncu>` | İki komut kökünde de geçerlidir. Tür ve tahsis başkana veya sunucu yöneticisine aittir. |
-| `forsale <fiyat>`, `notforsale`, `claim`, `unclaim`, `evict` | Sahip veya yönetici teklif verebilir. Sıfır fiyatla tahsis yapılır. Pozitif tam sayı fiyat saklanır ve ekonomi sağlayıcısı gerektiği bildirilir. Tahsis değişiminde kişisel güven ve izinler sıfırlanır. |
+| `forsale <fiyat>`, `notforsale`, `claim`, `unclaim`, `evict` | Sahip veya yönetici teklif verebilir. Sıfır fiyatla tahsis yapılır. Ücretli alımda para özel mülkün sahibine veya belediye mülkü için şehir bankasına aktarılır. Tahsis değişiminde kişisel güven ve izinler sıfırlanır. |
 | `trust add/remove <oyuncu>`, `perm <eylem> <grup> true/false` | Eylemler `build`, `destroy`, `interact`, `item-use`. Gruplar `trusted`, `citizen`, `outsider`. |
 | `/plot group create/join/delete <ad>`, `/plot group leave` | Belediye yöneticisi grubu kurar ve plotları ekler. Gruptaki bir plotta verilen `/plot perm` tüm üyelerin aynı ayarını günceller. |
 | `/quarter set color <RRGGBB>`, `/quarter set description <metin>`, `/quarter show` | Ad ve açıklamayı kişiselleştirir, sınırları seçilen renkte oyuncuya gösterir. |
@@ -80,7 +102,7 @@ Her plot bir doğrulanmış şehir chunk’ıdır. Her quarter tek plot içindek
 | Embassy | Başka şehir vatandaşına tahsis ve güven verilebilir. Yabancıya ayrıca OPAC erişimi gerekir. |
 | Inn, station | Handa ziyaretçilerin yatak etkileşimi, istasyonda vatandaşların etkileşimi ve ray üzerinde eşya kullanımı desteklenir. |
 | Arena | Arena sınırını geçen oyuncu saldırıları engellenir. İçeride sunucunun ve OPAC’nin PvP kuralları geçerlidir. |
-| Bank, jail | Bankada vatandaşlar ender sandığı kullanabilir. Cezaevi belediye mülkü olarak kalır. Para transferi, cezalandırma ve hapis süreleri bu sürümün kapsamı dışındadır. |
+| Bank, jail | Bankada vatandaşlar ender sandığı kullanabilir. Cezaevi belediye mülkü olarak kalır. Cezalandırma ve hapis süreleri bu sürümün kapsamı dışındadır. |
 
 Dünya sunucu ayarlarında `maxQuartersPerTown` (128), `maxCuboidsPerQuarter` (16), `maxCuboidVolume` (16.384 blok) ve `quarterEntryMessages` bulunur. Kotalar yeni seçimlere uygulanır. Claim kaybında mülkler temizlenir. OPAC’nin chunk erişim arayüzü Y koordinatını taşımadığı için tek bir daireye giren yabancıya yeni bir chunk izni verilmez. Forge katmanı oyuncu işlemini hedef blokta durdurabilir. Patlamalarda korunan bloklar listeden çıkarılır. Piston, vanilla sıvı akışı ve vanilla hopper giriş/çıkışı parsel sınırında kontrol edilir. Forge olaylarını ve vanilla aktarım yollarını atlayan modlu borular, makineler ve doğrudan dünya değişiklikleri ayrıca mod bazında entegrasyon gerektirir.
 
@@ -124,7 +146,7 @@ Gradle, Mojang mappings için OPAC'nin resmî `:dev` paketini ve MixinGradle kul
 
 ## Yol haritası
 
-- **Sonraki sürümler.** Pasaport ve belge modları salt okunur vatandaşlık API'sine bağlanabilir. Ekonomi, seçimler ve diplomasi sonraki sürümlerin kapsamındadır.
+- **Sonraki sürümler.** Pasaport ve belge modları salt okunur vatandaşlık API'sine bağlanabilir. Seçimler ve diplomasi sonraki sürümlerin kapsamındadır.
 
 ## Lisans
 

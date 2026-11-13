@@ -15,6 +15,7 @@ import java.util.regex.Pattern;
 public final class WorldRegistry extends SavedData implements HistoricalNationsApi {
     public final dev.zeorez.historicalnations.property.PropertyBook properties =
             new dev.zeorez.historicalnations.property.PropertyBook(this);
+    final Ledger ledger = new Ledger(this);
     static final String FILE = "historical_nations";
     private static final Pattern NAME = Pattern.compile("[\\p{L}\\p{N}][\\p{L}\\p{M}\\p{N} _-]{0,31}");
     final Map<UUID, Town> towns = new LinkedHashMap<>();
@@ -203,11 +204,13 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     public Town checkDisband(UUID actor) {
         Town town = mayorTown(actor);
         requireNonCapital(town);
+        ledger.checkClose(Ledger.Account.town(town.id()), actor);
         return town;
     }
     public void disbandTown(UUID actor) {
         Town town = checkDisband(actor);
         require(territoryLocations(town.id()).isEmpty(), "land_remaining");
+        ledger.close(Ledger.Account.town(town.id()), actor);
         deputies.remove(town.id());
         descriptions.remove(town.id());
         properties.disband(town.id());
@@ -261,6 +264,7 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     }
     public void disbandNation(UUID actor) {
         Nation nation = ledNation(actor);
+        ledger.close(Ledger.Account.nation(nation.id()), actor);
         nations.remove(nation.id());
         townNations.values().removeIf(nation.id()::equals);
         nationInvites.removeIf(i -> i.issuer().equals(nation.id()));

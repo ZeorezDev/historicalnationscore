@@ -37,7 +37,7 @@ final class MunicipalTest {
         s.command(a,"plot set name Belediye","updated");
         s.command(a,"plot forsale 100","updated");
         s.c.setPos(-17,80,33);
-        s.command(s.c,"plot claim","!no_economy");
+        s.command(s.c,"plot claim","!insufficient_funds");
         s.command(a,"plot forsale 0","updated");
         s.command(s.c,"plot claim","updated");
         room(a,new BlockPos(-28,80,34),"Daire");
