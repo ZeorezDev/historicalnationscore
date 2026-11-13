@@ -1,4 +1,4 @@
-# Historical Nations Core · v0.2.0
+# Historical Nations Core · v0.3.0
 
 Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehirleri, devletleri ve vatandaşlığı yönetir. Oyuncular yönetim işlemlerini sohbet komutlarıyla yapar. Her dünya kaydı kendi şehir ve devlet verisini taşır.
 
@@ -14,7 +14,7 @@ Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehi
 ## Kurulum ve derleme
 
 1. JDK 17 ile `JAVA_HOME` ayarlayın. Depo kökünde Windows için `.\gradlew.bat build`, Linux veya macOS için `./gradlew build` çalıştırın.
-2. Forge 47.4.28 sunucusunun ve katılacak Forge istemcilerinin `mods/` klasörlerine `build/libs/historical_nations-0.2.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` dosyalarını koyun. v0.1.0'dan yükseltirken sunucuyu kapatın, dünyayı yedekleyin ve eski Historical Nations JAR'ını yenisiyle değiştirin. Mevcut şehirler sıfır şehir arazisiyle başlar.
+2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-0.3.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
 3. Sunucuyu açın. Oyunda `/town list` ve `/town claimstatus` komutlarıyla kurulumu deneyin. Sohbet metinleri istemcinin dil ayarını izler.
 
 [Forge 1.20.1 indirmeleri](https://files.minecraftforge.net/net/minecraftforge/forge/index_1.20.1.html) · [Resmî OPAC 0.33.0 paketleri](https://chocolateminecraft.com/maven/xaero/pac/open-parties-and-claims-forge-1.20.1/0.33.0/)
@@ -26,7 +26,7 @@ Komutlar bir oyuncu adına çalışır. Şehir ve devlet adları 1–32 karakter
 | Şehir komutu | Etki |
 | --- | --- |
 | `/town create <ad>` | Bağımsız bir şehir kurar ve kurucusunu belediye başkanı yapar. |
-| `/town invite <oyuncu>` | Belediye başkanı, bir şehre üye olmayan oyuncuyu davet eder. |
+| `/town invite <oyuncu>` | Belediye başkanı veya yardımcısı bağımsız bir oyuncuyu davet eder. |
 | `/town accept <ad>`, `/town deny <ad>` | Oyuncu ilgili şehrin davetini kabul eder veya reddeder. |
 | `/town leave` | Vatandaş şehirden ayrılır. Belediye başkanının önce görevi devretmesi gerekir. |
 | `/town info [ad]`, `/town list`, `/town members` | Şehir bilgilerini, tüm şehirleri veya kendi şehrinizin vatandaşlarını gösterir. |
@@ -49,7 +49,46 @@ Komutlar bir oyuncu adına çalışır. Şehir ve devlet adları 1–32 karakter
 
 Davetler yeniden başlatmada korunur. Bir oyuncu şehre, bir şehir devlete katıldığında aynı alıcıya gönderilmiş diğer davetler temizlenir. Başkent belediye başkanlığı devredildiğinde devlet liderliği de devredilir.
 
+## Belediye, plot ve alt parsel komutları
+
+Başkan `/town deputy set <oyuncu>` ve `/town deputy remove` ile bir vatandaşını yardımcı atayabilir veya görevden alabilir. Başkan ve yardımcısı `/town invite`, `/town kick <oyuncu>`, `/town description set <metin>` ve `/town description clear` kullanabilir. Başkanın görev devri ve şehir dağıtma yetkileri kendisinde kalır. `/town info` yardımcıyı ve açıklamayı gösterir.
+
+Her plot bir doğrulanmış şehir chunk’ıdır. Her quarter tek plot içindeki bir veya daha fazla kapalı blok hacminden oluşur. Daire oluşturmak için şu sırayı izleyin:
+
+1. Başkan veya seviye 2 sunucu yöneticisi olarak plotta `/quarter wand` alın. İlk köşeye sol, ikinci köşeye sağ tıklayın. Alternatif olarak köşelerde durup `/quarter pos1` ve `/quarter pos2` kullanın.
+2. Aynı plotta `/quarter create Zemin Kat` çalıştırın. Dairenin içinde durup `/quarter set owner <oyuncu>` kullanın.
+3. Üst kat için aynı işlemi farklı Y aralığında tekrarlayın. Her iki köşe dahildir. Birinci daire 64–67 yüksekliğini kaplıyorsa ikinci daire 68’den başlayabilir.
+4. Başka bir hacim seçtikten sonra hedef dairenin içine dönüp `/quarter addselection` kullanın. `/quarter replace <parça numarası>` bir hacmi değiştirir. `/quarter merge <kaynak daire>` kaynak hacimlerini içinde bulunduğunuz daireye ekler. Hedefin sahibi ve izinleri geçerli olur. `/quarter delete` daireyi kaldırır.
+
+| Komut | Kullanım |
+| --- | --- |
+| `/plot info`, `/quarter info` | Ad, tür, UUID, sahip, teklif, grup, açıklama, ayarlanmış izinler ve hacim sayısı. |
+| `set name <ad>`, `set type <tür>`, `set owner <oyuncu>` | İki komut kökünde de geçerlidir. Tür ve tahsis başkana veya sunucu yöneticisine aittir. |
+| `forsale <fiyat>`, `notforsale`, `claim`, `unclaim`, `evict` | Sahip veya yönetici teklif verebilir. Sıfır fiyatla tahsis yapılır. Pozitif tam sayı fiyat saklanır ve ekonomi sağlayıcısı gerektiği bildirilir. Tahsis değişiminde kişisel güven ve izinler sıfırlanır. |
+| `trust add/remove <oyuncu>`, `perm <eylem> <grup> true/false` | Eylemler `build`, `destroy`, `interact`, `item-use`. Gruplar `trusted`, `citizen`, `outsider`. |
+| `/plot group create/join/delete <ad>`, `/plot group leave` | Belediye yöneticisi grubu kurar ve plotları ekler. Gruptaki bir plotta verilen `/plot perm` tüm üyelerin aynı ayarını günceller. |
+| `/quarter set color <RRGGBB>`, `/quarter set description <metin>`, `/quarter show` | Ad ve açıklamayı kişiselleştirir, sınırları seçilen renkte oyuncuya gösterir. |
+
+**Erişim sırası.** OPAC erişimi üst sınırdır. Belediye mülkünde yönetici, tahsisli mülkte sahibi normal kullanım hakkına sahiptir. Quarter içinde quarter kuralları, dışında plot kuralları uygulanır. Güvenilen oyuncu, vatandaş ve yabancı için açık kurallar türün varsayılanından önce değerlendirilir. Plot grubunun kuralı aynı eylem ve grup için yerel ayarın önüne geçer. Başkan ve sunucu yöneticisi tahsisi değiştirebilir. Şehirden ayrılmak veya çıkarılmak, elde tutulan kişisel tahsisleri ve güven ilişkilerini kaldırır.
+
+| Tür | Kullanım kuralı |
+| --- | --- |
+| Residential, apartment | Tahsisli mülkte inşa sahibine ve güvenilenlere ayrılır. Tahsissiz apartman dairesini belediye yönetir. |
+| Commercial / shop | OPAC erişimi olan ziyaretçiler varsayılan olarak dükkân kapılarını ve düğmelerini kullanabilir. |
+| Farm, wilderness / wilds | İnşa ve yıkım çiftlikte tanımlı ekinlere ve tarım bloklarına, wilds alanında kütük, yaprak, fidan ve çiçeklere sınırlıdır. |
+| Industrial, public | Sanayi plotunda vatandaşlar varsayılan olarak etkileşim ve eşya kullanımı yapabilir. Public plotta blok etkileşimi ziyaretçilere de açıktır. |
+| Embassy | Başka şehir vatandaşına tahsis ve güven verilebilir. Yabancıya ayrıca OPAC erişimi gerekir. |
+| Inn, station | Handa ziyaretçilerin yatak etkileşimi, istasyonda vatandaşların etkileşimi ve ray üzerinde eşya kullanımı desteklenir. |
+| Arena | Arena sınırını geçen oyuncu saldırıları engellenir. İçeride sunucunun ve OPAC’nin PvP kuralları geçerlidir. |
+| Bank, jail | Bankada vatandaşlar ender sandığı kullanabilir. Cezaevi belediye mülkü olarak kalır. Para transferi, cezalandırma ve hapis süreleri bu sürümün kapsamı dışındadır. |
+
+Dünya sunucu ayarlarında `maxQuartersPerTown` (128), `maxCuboidsPerQuarter` (16), `maxCuboidVolume` (16.384 blok) ve `quarterEntryMessages` bulunur. Kotalar yeni seçimlere uygulanır. Claim kaybında mülkler temizlenir. OPAC’nin chunk erişim arayüzü Y koordinatını taşımadığı için tek bir daireye giren yabancıya yeni bir chunk izni verilmez. Forge katmanı oyuncu işlemini hedef blokta durdurabilir. Patlamalarda korunan bloklar listeden çıkarılır. Piston, vanilla sıvı akışı ve vanilla hopper giriş/çıkışı parsel sınırında kontrol edilir. Forge olaylarını ve vanilla aktarım yollarını atlayan modlu borular, makineler ve doğrudan dünya değişiklikleri ayrıca mod bazında entegrasyon gerektirir.
+
+Davranışları incelenen sürümler için [Towny](https://github.com/TownyAdvanced/Towny/tree/7492ae6c5d4ddfb590fc298ba9fd5a4acbe7c2be), [Quarters](https://github.com/jwkerr/Quarters/tree/fbf604272e9077477f8cd13729d5b5df38764dfc) ve [OPAC](https://github.com/thexaero/open-parties-and-claims/tree/fd12115e97af9642005742da9586939e9803a327) kaynaklarına bakın.
+
 ## Kalıcı veri ve Java API
+
+`Parcels.plot(server, dimension, blockPos)` ve `Parcels.quarter(...)` canlı OPAC bağını doğrular ve salt okunur `Optional<ParcelView>` döndürür. UUID, konum, sahip, fiyat, grup, güvenilenler, ayarlanmış izinler ve hacimler anlık görüntüde yer alır. Historical Documents mevcut liderlik ve vatandaşlık çağrılarını kullanabilir.
 
 Dünya kaydının `data/historical_nations.dat` dosyasını Forge/Minecraft `SavedData` yönetir. Tüm boyutlar Overworld üzerinden aynı kayda erişir. Oyuncu, şehir ve devletler UUID ile tanımlanır. Devlet vatandaşlığı oyuncunun şehrinin güncel devletinden hesaplanır. Claim kayıtları OPAC'de tutulur.
 
