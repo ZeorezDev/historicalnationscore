@@ -16,6 +16,8 @@ public final class HistoricalNations {
 
     public HistoricalNations() {
         ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, TerritoryConfig.SPEC);
+        MinecraftForge.EVENT_BUS.register(dev.zeorez.historicalnations.property.QuarterCommands.class);
+        MinecraftForge.EVENT_BUS.register(dev.zeorez.historicalnations.property.ParcelProtection.class);
         MinecraftForge.EVENT_BUS.addListener(TerritoryHooks::register);
         MinecraftForge.EVENT_BUS.addListener(this::serverStarted);
         MinecraftForge.EVENT_BUS.addListener(this::registerCommands);
@@ -27,5 +29,6 @@ public final class HistoricalNations {
 
     private void registerCommands(RegisterCommandsEvent event) {
         NationCommands.register(event.getDispatcher());
+        dev.zeorez.historicalnations.property.PropertyCommands.register(event.getDispatcher());
     }
 }

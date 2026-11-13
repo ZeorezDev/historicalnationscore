@@ -1,0 +1,8 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "package": "dev.zeorez.historicalnations.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": ["FluidBoundary", "HopperBoundary"],
+  "injectors": { "defaultRequire": 1 }
+}

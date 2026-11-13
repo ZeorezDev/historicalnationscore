@@ -13,10 +13,14 @@ import java.util.regex.Pattern;
 
 /** One registry per save, accessed exclusively on its logical server thread. */
 public final class WorldRegistry extends SavedData implements HistoricalNationsApi {
+    public final dev.zeorez.historicalnations.property.PropertyBook properties =
+            new dev.zeorez.historicalnations.property.PropertyBook(this);
     static final String FILE = "historical_nations";
     private static final Pattern NAME = Pattern.compile("[\\p{L}\\p{N}][\\p{L}\\p{M}\\p{N} _-]{0,31}");
     final Map<UUID, Town> towns = new LinkedHashMap<>();
     final Map<UUID, Nation> nations = new LinkedHashMap<>();
+    final Map<UUID, UUID> deputies = new HashMap<>();
+    final Map<UUID, String> descriptions = new HashMap<>();
     final Map<UUID, UUID> playerTowns = new HashMap<>();
     final Map<UUID, UUID> townNations = new HashMap<>();
     final Set<Invitation> townInvites = new LinkedHashSet<>();
@@ -38,11 +42,15 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
 
     public void link(Territory.Location location, Territory territory) {
         require(territories.putIfAbsent(location, territory) == null, "land_occupied");
+        properties.add(location);
         setDirty();
     }
 
     public void unlink(Territory.Location location) {
-        if (territories.remove(location) != null) setDirty();
+        if (territories.remove(location) != null) {
+            properties.remove(location);
+            setDirty();
+        }
     }
 
     record Invitation(UUID issuer, UUID recipient) {}
@@ -129,8 +137,42 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
         townInvites.removeIf(i -> i.recipient().equals(player));
         setDirty();
     }
-    public Town invitePlayer(UUID actor, UUID target) {
+    public UUID deputy(UUID town) { return deputies.get(town); }
+    public String description(UUID town) { return descriptions.getOrDefault(town, ""); }
+
+    private Town administration(UUID actor) {
+        Town town = home(actor);
+        require(town.mayor().equals(actor) || actor.equals(deputy(town.id())), "mayor_only");
+        return town;
+    }
+
+    public void appoint(UUID actor, UUID target) {
         Town town = mayorTown(actor);
+        if (target == null) deputies.remove(town.id());
+        else {
+            require(!target.equals(actor) && town.id().equals(playerTowns.get(target)), "invalid_successor");
+            deputies.put(town.id(), target);
+        }
+        setDirty();
+    }
+
+    public void describe(UUID actor, String text) {
+        Town town = administration(actor);
+        require(text.length() <= 256 && text.chars().noneMatch(Character::isISOControl), "invalid_text");
+        if (text.isBlank()) descriptions.remove(town.id());
+        else descriptions.put(town.id(), text.strip());
+        setDirty();
+    }
+
+    public void kick(UUID actor, UUID target) {
+        Town town = administration(actor);
+        require(!actor.equals(target) && town.id().equals(playerTowns.get(target))
+                && !target.equals(town.mayor()), "invalid_successor");
+        leaveTown(target);
+    }
+
+    public Town invitePlayer(UUID actor, UUID target) {
+        Town town = administration(actor);
         require(!playerTowns.containsKey(target), "already_citizen");
         require(townInvites.add(new Invitation(town.id(), target)), "already_invited");
         setDirty();
@@ -146,12 +188,15 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
         Town town = mayorTown(actor);
         require(!actor.equals(successor) && town.id().equals(playerTowns.get(successor)), "invalid_successor");
         require(territoryLocations(town.id()).isEmpty(), "land_transfer");
+        deputies.remove(town.id(), successor);
         towns.put(town.id(), new Town(town.id(), town.name(), successor));
         setDirty();
     }
     public void leaveTown(UUID actor) {
         Town town = home(actor);
         require(!town.mayor().equals(actor), "transfer_first");
+        deputies.remove(town.id(), actor);
+        properties.depart(actor);
         playerTowns.remove(actor);
         setDirty();
     }
@@ -163,7 +208,11 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     public void disbandTown(UUID actor) {
         Town town = checkDisband(actor);
         require(territoryLocations(town.id()).isEmpty(), "land_remaining");
+        deputies.remove(town.id());
+        descriptions.remove(town.id());
+        properties.disband(town.id());
         towns.remove(town.id());
+        members(town.id()).forEach(properties::depart);
         playerTowns.values().removeIf(town.id()::equals);
         townNations.remove(town.id());
         townInvites.removeIf(i -> i.issuer().equals(town.id()));

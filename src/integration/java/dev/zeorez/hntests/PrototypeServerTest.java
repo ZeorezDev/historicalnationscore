@@ -70,6 +70,9 @@ public final class PrototypeServerTest {
                 case "verify" -> suite.verify();
                 case "territorySetup" -> suite.territorySetup();
                 case "territoryVerify" -> suite.territoryVerify();
+                case "municipalSetup" -> new MunicipalTest(suite).setup();
+                case "municipalVerify" -> new MunicipalTest(suite).verify();
+                case "boundaries" -> new MunicipalTest(suite).boundaries();
                 default -> throw new IllegalArgumentException("Unknown test phase " + phase);
             }
             LogUtils.getLogger().info("HN INTEGRATION PASS {}", phase);
@@ -88,7 +91,7 @@ public final class PrototypeServerTest {
         public boolean shouldInformAdmins() { return false; }
     }
 
-    private static final class Suite {
+    static final class Suite {
         final MinecraftServer server;
         final HistoricalNationsApi api;
         final FakePlayer a, b, c, d;
@@ -142,6 +145,7 @@ public final class PrototypeServerTest {
             command(mayor, "town invite HnNetB", "invited");
             command(citizen, "town accept Bursa", "town_joined");
             checkBuild(mayor, citizen, false);
+            new MunicipalTest(this).network(mayor,citizen);
             command(citizen, "town claim", "!mayor_only");
             command(citizen, "town unclaim", "!mayor_only");
             command(mayor, "town setmayor HnNetB", "!land_transfer");
@@ -341,7 +345,7 @@ public final class PrototypeServerTest {
         }
     }
 
-    private static void check(boolean condition, String message) {
+    static void check(boolean condition, String message) {
         if (!condition) throw new AssertionError(message);
     }
 }

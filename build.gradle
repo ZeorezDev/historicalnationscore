@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'dev.zeorez.historicalnations'
-version = '0.2.0'
+version = '0.3.0'
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 sourceSets {
@@ -53,6 +53,8 @@ dependencies {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
+mixin { config 'historical_nations.mixins.json' }
+jar.manifest.attributes('MixinConfigs': 'historical_nations.mixins.json')
 jar.finalizedBy('reobfJar')
 
 // A separately packaged fixture exercises the release JAR on a stock dedicated server.

@@ -78,6 +78,24 @@ public final class NationCommands {
             Component townName = link == null ? msg("none") : Component.literal(c.data.getTownById(link.town()).orElseThrow().name());
             return msg("land_info", pos.dimension().toString(), pos.x(), pos.z(), townName);
         })));
+        town.then(literal("deputy").then(literal("set").then(argument("player", GameProfileArgument.gameProfile()).executes(run(c -> {
+            c.data.appoint(c.id(), c.target().getId());
+            return msg("updated");
+        })))).then(literal("remove").executes(run(c -> {
+            c.data.appoint(c.id(), null);
+            return msg("updated");
+        }))));
+        town.then(literal("kick").then(argument("player", GameProfileArgument.gameProfile()).executes(run(c -> {
+            c.data.kick(c.id(), c.target().getId());
+            return msg("updated");
+        }))));
+        town.then(literal("description").then(named("set", (c, value) -> {
+            c.data.describe(c.id(), value);
+            return msg("updated");
+        })).then(literal("clear").executes(run(c -> {
+            c.data.describe(c.id(), "");
+            return msg("updated");
+        }))));
         dispatcher.register(town);
 
         var nation = literal("nation");
@@ -106,7 +124,7 @@ public final class NationCommands {
         dispatcher.register(nation);
     }
 
-    private interface Action {
+    interface Action {
         Component execute(Context context) throws CommandSyntaxException;
     }
     private interface NamedAction {
@@ -116,7 +134,7 @@ public final class NationCommands {
         return literal(verb).then(argument("name", StringArgumentType.greedyString()).executes(
                 run(c -> action.execute(c, StringArgumentType.getString(c.command, "name")))));
     }
-    private static Command<CommandSourceStack> run(Action action) {
+    static Command<CommandSourceStack> run(Action action) {
         return command -> {
             var player = command.getSource().getPlayerOrException();
             var context = new Context(command, player, WorldRegistry.get(command.getSource().getServer()));
@@ -129,14 +147,14 @@ public final class NationCommands {
             }
         };
     }
-    private static Component msg(String key, Object... args) {
+    static Component msg(String key, Object... args) {
         return Component.translatable("historical_nations." + key, args);
     }
     private static Component names(List<String> names) {
         return names.isEmpty() ? msg("none") : Component.literal(String.join(", ", names));
     }
 
-    private record Context(CommandContext<CommandSourceStack> command, ServerPlayer player, WorldRegistry data) {
+    record Context(CommandContext<CommandSourceStack> command, ServerPlayer player, WorldRegistry data) {
         UUID id() { return player.getUUID(); }
         MinecraftServer server() { return command.getSource().getServer(); }
         TownTerritories land() { return new TownTerritories(server()); }
@@ -166,7 +184,9 @@ public final class NationCommands {
         Component townInfo(Town town) {
             Component nation = data.getTownNation(town.id()).map(n -> Component.literal(n.name()))
                     .orElseGet(() -> Component.translatable("historical_nations.independent"));
-            return msg("town_info", town.name(), playerName(town.mayor()), data.members(town.id()).size(), nation);
+            UUID deputy = data.deputy(town.id());
+            return msg("town_info", town.name(), playerName(town.mayor()), data.members(town.id()).size(), nation,
+                    deputy == null ? msg("none") : Component.literal(playerName(deputy)), data.description(town.id()));
         }
         Component nationInfo(Nation nation) {
             Town capital = data.getTownById(nation.capitalTown()).orElseThrow();
