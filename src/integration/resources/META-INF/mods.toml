@@ -8,6 +8,6 @@ displayName="Historical Nations Dedicated Server Tests"
 [[dependencies.hn_integration_tests]]
 modId="historical_nations"
 mandatory=true
-versionRange="[0.2.0]"
+versionRange="[0.3.0]"
 ordering="AFTER"
 side="SERVER"

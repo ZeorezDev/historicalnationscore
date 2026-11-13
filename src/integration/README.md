@@ -1,5 +1,17 @@
 # Prototipin sunucu testleri
 
+## v0.3.0 doğrulaması
+
+Forge 47.4.28, Java 17 ve OPAC 0.33.0 kullanılan yerel dedicated server üzerinde şu aşamaları çalıştırın. Her aşama, aşağıda tarif edilen sunucu komutunda `-Dhn.test.phase=<aşama>` ile seçilir. Günlükte ilgili `HN INTEGRATION PASS` satırını arayın.
+
+| Aşama | Dünya ve doğrulama |
+| --- | --- |
+| `territorySetup` → `municipalSetup` → `municipalVerify` | İlk aşamada v0.2.0 dağıtım ve test JAR’larıyla yeni bir dünya oluşturun. İkisini v0.3.0 ile değiştirin ve kalan iki aşamayı aynı dünya üzerinde ayrı sunucu süreçlerinde çalıştırın. Belediye yetkileri, ücretsiz tahsis, pozitif fiyat reddi, çok hacimli daire, kesişim reddi, kayıtların yeniden okunması ve dışarıdan değişen OPAC claim’i kontrol edilir. |
+| `boundaries` | Yeni dünya ve Forge test oyuncuları. Seçim ve parsel kotaları, plot dışına taşma, daire birleştirme, iki plotta ortak izin, belediye başkanlığı devri ve şehir dağıtma. Vanilla hopper aktarımı ve su akışı hem daire içinde hem sınırda denenir. Piston ve patlama için Forge olayları çalıştırılır. |
+| `network` | Yeni dünya ve aşağıdaki iki Forge istemcisi. HnNetA ile HnNetB aynı şehirde, tek chunk içinde farklı yüksekliklerde iki daire alır. İki oyuncu için de sunucunun normal oyuncu yerleştirme ve kırma işlemleri çalıştırılır. Dört oyuncu–daire eşleşmesinde gerçek blok durumu okunur. |
+
+Yükseltme ve yeniden başlatmada `PASS municipalSetup` ve `PASS municipalVerify`, sınır testlerinde `PASS boundaries`, iki istemciyle `PASS network` gözlendi. İlk istemcinin bağlantısı ilk denemede zaman aşımına uğradı. Test istemcisi yerel sunucuya yeniden bağlanınca iki katın karşılıklı inşa denetimi tamamlandı.
+
 JDK 17 ile depo kökünde `.\gradlew.bat build integrationJar` çalıştırın (Linux/macOS üzerinde `./gradlew`). Dağıtım modu `build/libs/` altında, test modu `build/integration/` altında oluşur.
 
 ## Kayıt, komut ve yetki testleri
