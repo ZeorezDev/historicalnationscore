@@ -10,6 +10,12 @@ public final class TerritoryConfig {
     public static final ForgeConfigSpec.IntValue VOLUME = BUILDER.defineInRange("maxCuboidVolume", 16384, 1, 16000000);
     public static final ForgeConfigSpec.IntValue PARTS = BUILDER.defineInRange("maxCuboidsPerQuarter", 16, 1, 128);
     public static final ForgeConfigSpec.BooleanValue ENTRY = BUILDER.define("quarterEntryMessages", true);
+    public enum Liquidation { REQUIRE_EMPTY, PAY_LEADER }
+    public static final ForgeConfigSpec.ConfigValue<String> CURRENCY = BUILDER.define("currencyName", "Lira");
+    public static final ForgeConfigSpec.ConfigValue<String> SYMBOL = BUILDER.define("currencySymbol", "₺");
+    public static final ForgeConfigSpec.LongValue STARTING = BUILDER.defineInRange("startingBalance", 0L, 0L, Long.MAX_VALUE);
+    public static final ForgeConfigSpec.EnumValue<Liquidation> LIQUIDATION =
+            BUILDER.defineEnum("bankLiquidation", Liquidation.REQUIRE_EMPTY);
     public static final ForgeConfigSpec SPEC = BUILDER.build();
 
     private TerritoryConfig() {}
