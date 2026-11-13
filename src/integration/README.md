@@ -1,5 +1,12 @@
 # Prototipin sunucu testleri
 
+## v0.4.0 doğrulaması
+
+- v0.3.0 dağıtım ve test JAR’larıyla yeni bir dünyada önce `territorySetup`, sonra `municipalSetup` çalıştırın. Sunucu kapalıyken iki JAR’ı v0.4.0 ile değiştirin. Aynı dünyada ayrı süreçlerde `economySetup` ve `economyVerify` çalıştırın. Her iki aşama Forge 47.4.28 üzerinde geçti.
+- Belediye ve özel mülk satışları, yetersiz bakiye ve alıcı taşması, yetkisiz çekim, eski mülkiyetin yüklenmesi, bakiyelerin yeniden okunması, kurum tasfiyesi ve liderlik devri kontrol edildi. Günlük tahsilatın aynı güne tekrar çağrılması ve geçmiş güne dönülmesi test saatinde sınandı.
+- Ayrı bir dünyada `network` ve aşağıda tarif edilen iki Forge istemcisiyle `PASS network` alındı. İki istemci aynı ilan için ayrı bağlantılardan `plot claim` gönderdi. Tek oyuncunun satın alma bedeli kesildi. Belediye geliri ve her iki bakiye doğrulandı. Aynı testte iki dairenin OPAC inşa kontrolleri de geçti.
+- Historical Documents 0.3.0’ın özgün JAR’ı, Core için tam `[0.2.0]` bağımlılığı nedeniyle Forge yüklemesinde reddedildi. Ayrı bir test kopyasında yalnızca bu sürüm bildirimi `[0.4.0]` yapıldı. Documents’ın kendi testleriyle `DOCUMENTS PASS setup` ve ikinci süreçte `DOCUMENTS PASS restart` alındı. Bu kopya dağıtım paketine dahil edilmedi.
+
 ## v0.3.0 doğrulaması
 
 Forge 47.4.28, Java 17 ve OPAC 0.33.0 kullanılan yerel dedicated server üzerinde şu aşamaları çalıştırın. Her aşama, aşağıda tarif edilen sunucu komutunda `-Dhn.test.phase=<aşama>` ile seçilir. Günlükte ilgili `HN INTEGRATION PASS` satırını arayın.
