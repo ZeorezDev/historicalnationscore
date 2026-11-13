@@ -123,7 +123,7 @@ public final class PropertyCommands {
             var view = p.view(c.link.town(), c.loc, c.book.shared(c.link.town(), p));
             return msg("parcel_info", p.name, p.kind.name(), p.owner == null ? msg("none") :
                     c.player.server.getProfileCache().get(p.owner).map(com.mojang.authlib.GameProfile::getName).orElse(p.owner.toString()),
-                    p.price == null ? msg("none") : p.price, p.group, p.description, p.id.toString(),
+                    p.price == null ? msg("none") : dev.zeorez.historicalnations.core.EconomyCommands.format(p.price), p.group, p.description, p.id.toString(),
                     p.trusted.size(), view.permissions().toString(), p.boxes.size());
         })));
         var set = literal("set");
@@ -177,8 +177,9 @@ public final class PropertyCommands {
         root.then(literal("claim").executes(run(q,c -> {
             var p = c.parcel();
             require(p.price != null, "no_offer");
-            require(p.price == 0L, "no_economy");
             require(c.eligible(c.player.getUUID(), p.kind), "parcel_membership");
+            dev.zeorez.historicalnations.core.Banking.get(c.player.server)
+                    .paySale(c.player, c.link.town(), p.owner, p.price, p.id);
             p.assign(c.player.getUUID());
             return c.changed();
         })));
