@@ -1,5 +1,12 @@
 # Sürüm geçmişi
 
+## 0.4.0 · Ekonomi ve bankacılık
+
+- Oyuncu cüzdanı, belediye bankası, devlet hazinesi, işlem geçmişi ve operatör komutları eklendi. Para birimi, ilk giriş ödeneği ve kurum tasfiyesi sunucu ayarlarından seçilebilir.
+- Ücretli plot ve quarter satışlarında bedel önceki sahibine veya belediyeye aktarılır. Sıfır fiyatla ücretsiz tahsis sürer.
+- Günlük sabit vergi ve bakım gideri ilk kurulumda kapalıdır. Eksik tahsilat kayıt altına alınır. Son tahsilat günü yeniden başlatmada korunur.
+- Sunucu tarafı ekonomi API’si bakiye, ödeme, yetkili para çekme ve para yatırma işlemlerini sunar. Bakiyeler mülklerle aynı SavedData dosyasında saklanır.
+
 ## 0.3.0 · Belediye ve parseller
 
 - Başkan yardımcısı atama, vatandaş çıkarma ve şehir açıklaması.
