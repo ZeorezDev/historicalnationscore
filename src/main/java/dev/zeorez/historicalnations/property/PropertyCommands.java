@@ -38,6 +38,7 @@ public final class PropertyCommands {
             link = new TownTerritories(player.server).verified(loc);
             require(link != null, "parcel_land");
             plot = book.plots.get(loc);
+            require(plot != null && plot.unreadable == null, "parcel_locked");
             this.quarter = quarter;
         }
         boolean manager() { return link.owner().equals(player.getUUID()) || cmd.getSource().hasPermission(2); }
@@ -140,6 +141,10 @@ public final class PropertyCommands {
                 c.manage();
                 var p = c.parcel();
                 require(p.owner == null || c.eligible(p.owner, kind), "parcel_membership");
+                if (kind == Parcel.Kind.JAIL) {
+                    require(p.owner == null, "municipal_facility");
+                    p.price = null;
+                }
                 p.kind = kind;
                 return c.changed();
             };
@@ -152,6 +157,7 @@ public final class PropertyCommands {
             c.manage();
             var p = c.parcel();
             var target = c.target();
+            require(p.kind != Parcel.Kind.JAIL, "municipal_facility");
             require(c.eligible(target, p.kind), "parcel_membership");
             p.assign(target);
             return c.changed();
@@ -162,7 +168,9 @@ public final class PropertyCommands {
         root.then(literal("evict").executes(run(q,c -> { c.manage(); c.parcel().assign(null); return c.changed(); })));
         root.then(literal("unclaim").executes(run(q,c -> { c.edit().assign(null); return c.changed(); })));
         root.then(literal("forsale").then(argument("price", LongArgumentType.longArg(0)).executes(run(q,c -> {
-            c.edit().price = LongArgumentType.getLong(c.cmd, "price");
+            var p = c.edit();
+            require(p.kind != Parcel.Kind.JAIL, "municipal_facility");
+            p.price = LongArgumentType.getLong(c.cmd, "price");
             return c.changed();
         }))));
         root.then(literal("notforsale").executes(run(q,c -> { c.edit().price = null; return c.changed(); })));

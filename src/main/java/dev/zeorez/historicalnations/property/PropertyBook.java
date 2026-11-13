@@ -15,6 +15,7 @@ public final class PropertyBook {
     static final class Plot {
         final Parcel land;
         final List<Parcel> quarters = new ArrayList<>();
+        CompoundTag unreadable;
         Plot(Parcel land) { this.land = land; }
         Parcel quarter(BlockPos pos) {
             for (var parcel : quarters)
@@ -37,10 +38,9 @@ public final class PropertyBook {
     }
     public void remove(Location loc) { plots.remove(loc); }
     public void disband(UUID town) { groups.keySet().removeIf(g -> g.town.equals(town)); }
-    public void depart(UUID town, UUID player) {
-        for (Location location : registry.territoryLocations(town)) {
-            Plot plot = plots.get(location);
-            if (plot == null) continue;
+    public void depart(UUID player) {
+        // Embassy ownership can be held in a different city.
+        for (Plot plot : plots.values()) {
             revoke(plot.land, player);
             plot.quarters.forEach(p -> revoke(p, player));
         }
@@ -63,7 +63,7 @@ public final class PropertyBook {
         if (link == null) return Optional.empty();
         var book = WorldRegistry.get(server).properties;
         Plot plot = book.plots.get(loc);
-        if (plot == null) return Optional.empty();
+        if (plot == null || plot.unreadable != null) return Optional.empty();
         Parcel parcel = quarter ? plot.quarter(pos) : plot.land;
         return Optional.ofNullable(parcel).map(p -> p.view(link.town(), loc, book.shared(link.town(), p)));
     }
@@ -71,6 +71,10 @@ public final class PropertyBook {
     public void save(CompoundTag root) {
         var rows = new ListTag();
         plots.forEach((loc, plot) -> {
+            if (plot.unreadable != null) {
+                rows.add(plot.unreadable.copy());
+                return;
+            }
             var row = plot.land.save();
             row.putUUID("Town", registry.territory(loc).town());
             row.putString("Dimension", loc.dimension().toString());
@@ -105,6 +109,8 @@ public final class PropertyBook {
             values.getAllKeys().forEach(k -> rules.put(k, values.getBoolean(k)));
             groups.put(new GroupKey(row.getUUID("Town"), row.getString("Name")), rules);
         }
+        Set<Location> loaded = new HashSet<>();
+        Set<UUID> identities = new HashSet<>();
         for (Tag entry : root.getList("Plots", Tag.TAG_COMPOUND)) {
             var row = (CompoundTag) entry;
             var dim = ResourceLocation.tryParse(row.getString("Dimension"));
@@ -112,15 +118,23 @@ public final class PropertyBook {
             Location loc = new Location(dim, row.getInt("X"), row.getInt("Z"));
             var link = registry.territory(loc);
             if (link == null || !row.hasUUID("Town") || !link.town().equals(row.getUUID("Town"))) continue;
-            Plot plot = new Plot(Parcel.read(row));
-            if (!plot.land.boxes.isEmpty()) throw new IllegalStateException("Invalid plot geometry at " + loc);
-            for (Tag child : row.getList("Quarters", Tag.TAG_COMPOUND)) {
-                Parcel q = Parcel.read((CompoundTag)child);
-                if (q.boxes.isEmpty() || q.boxes.stream().anyMatch(b -> !b.inChunk(loc.x(), loc.z()) || plot.intersects(b, null)))
-                    throw new IllegalStateException("Invalid quarter geometry at " + loc);
-                plot.quarters.add(q);
+            try {
+                if (!loaded.add(loc) || row.getBoolean("ConflictingRows")) throw new IllegalArgumentException("Duplicate plot");
+                Plot plot = new Plot(Parcel.read(row));
+                if (!plot.land.boxes.isEmpty() || !identities.add(plot.land.id)) throw new IllegalArgumentException("Invalid plot");
+                for (Tag child : row.getList("Quarters", Tag.TAG_COMPOUND)) {
+                    Parcel q = Parcel.read((CompoundTag)child);
+                    if (!identities.add(q.id) || q.boxes.isEmpty() || q.boxes.stream().anyMatch(b ->
+                            !b.inChunk(loc.x(), loc.z()) || plot.intersects(b, null))) throw new IllegalArgumentException("Invalid quarter");
+                    plot.quarters.add(q);
+                }
+                plots.put(loc, plot);
+            } catch (RuntimeException invalid) {
+                var locked = plots.get(loc);
+                locked.unreadable = row.copy();
+                locked.unreadable.putBoolean("ConflictingRows", true);
+                com.mojang.logging.LogUtils.getLogger().error("Locked damaged municipal parcel at {}", loc, invalid);
             }
-            plots.put(loc, plot);
         }
     }
 }

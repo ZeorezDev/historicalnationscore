@@ -196,7 +196,7 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
         Town town = home(actor);
         require(!town.mayor().equals(actor), "transfer_first");
         deputies.remove(town.id(), actor);
-        properties.depart(town.id(), actor);
+        properties.depart(actor);
         playerTowns.remove(actor);
         setDirty();
     }
@@ -212,6 +212,7 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
         descriptions.remove(town.id());
         properties.disband(town.id());
         towns.remove(town.id());
+        members(town.id()).forEach(properties::depart);
         playerTowns.values().removeIf(town.id()::equals);
         townNations.remove(town.id());
         townInvites.removeIf(i -> i.issuer().equals(town.id()));

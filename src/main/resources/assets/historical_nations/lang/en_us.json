@@ -1,4 +1,7 @@
 {
+  "historical_nations.parcel_locked": "This plot has inconsistent saved data and is locked. Contact the server administrator.",
+  "historical_nations.municipal_facility": "A jail must remain under municipal ownership. Evict the current owner before conversion.",
+  "historical_nations.entry": "Entering %s",
   "historical_nations.wand": "Quarter selection wand",
   "historical_nations.wand_help": "Left-click the first corner and right-click the second.",
   "historical_nations.corner": "Corner %s: %s",

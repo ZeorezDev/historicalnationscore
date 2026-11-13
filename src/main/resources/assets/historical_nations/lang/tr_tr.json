@@ -1,4 +1,7 @@
 {
+  "historical_nations.parcel_locked": "Bu plotun kayıtları tutarsız olduğu için kilitlendi. Sunucu yöneticisine başvurun.",
+  "historical_nations.municipal_facility": "Cezaevi belediye mülkü olmalıdır. Dönüşümden önce mevcut tahsisi kaldırın.",
+  "historical_nations.entry": "%s alanına girdiniz",
   "historical_nations.wand": "Alt parsel seçim aracı",
   "historical_nations.wand_help": "İlk köşeye sol, ikinci köşeye sağ tıklayın.",
   "historical_nations.corner": "Köşe %s: %s",
