@@ -1,5 +1,14 @@
 # Prototipin sunucu testleri
 
+## v0.5.0 doğrulaması
+
+Üretim JAR’ı Java 17 ile derlendi ve Forge 47.4.28 ile OPAC 0.33.0 kullanılan dedicated server üzerinde sınandı. Aşağıdaki senaryolar sunucunun gerçek komut ağacını Forge test oyuncuları ile kullanır.
+
+1. v0.4.0 dağıtım JAR’ı ve v0.5.0 test JAR’ı ile boş bir dünyada `currencyLegacy` çalıştırın. Dünya iki devlet, eski bakiyeler, vergi ve 31 Liralık açık bir ilan içerir. Sunucuyu kapatın ve dünyayı kopyalayın.
+2. Dağıtım JAR’ını v0.5.0 ile değiştirin. Kopya dünyada `currencySetup` çalıştırın. Eski ilanı TRY ile satın alma, iki ulusal para, kod çakışması, yetkisiz basım, günlük limit, birden çok bakiye, banka, rezerv yetersizliği, ücretli quarter ve vergi sınandı. Yapay gün geçişinde fiyat endeksi ve kurlar hesaplandı. Aynı ve önceki günün tekrar işlenmediği kontrol edildi.
+3. Aynı kopyayı yeni bir sunucu sürecinde `currencyVerify` ile açın. Kayıtlı ilan, bakiyeler, günlük basım limiti ve devlet dağıtıldıktan sonra eski parayla özel satış doğrulandı. Üç aşamada da `HN INTEGRATION PASS` alındı.
+4. Historical Documents 0.3.0, Core 0.2.0 sürümüne sabitlenmiştir. Ayrı bir test kopyasında yalnızca bu bağımlılık bildirimi 0.5.0 yapıldı. Documents’ın kendi testleri `DOCUMENTS PASS setup` ve `DOCUMENTS PASS restart` verdi.
+
 ## v0.4.0 doğrulaması
 
 - v0.3.0 dağıtım ve test JAR’larıyla yeni bir dünyada önce `territorySetup`, sonra `municipalSetup` çalıştırın. Sunucu kapalıyken iki JAR’ı v0.4.0 ile değiştirin. Aynı dünyada ayrı süreçlerde `economySetup` ve `economyVerify` çalıştırın. Her iki aşama Forge 47.4.28 üzerinde geçti.
