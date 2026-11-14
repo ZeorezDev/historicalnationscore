@@ -17,6 +17,7 @@ final class Parcel {
     final List<Box> boxes = new ArrayList<>();
     UUID owner;
     Long price;
+    String currency = dev.zeorez.historicalnations.api.EconomyApi.REFERENCE;
     String name, description = "", group = "";
     Kind kind;
     int color = 0x46b8cf;
@@ -38,7 +39,7 @@ final class Parcel {
         var effective = new HashMap<>(permissions);
         effective.putAll(shared);
         return new ParcelView(id, town, loc.dimension(), loc.x(), loc.z(), name, kind.name(), owner, price,
-                group, color, description, trusted, effective, boxes);
+                group, color, description, trusted, effective, boxes, currency);
     }
 
     CompoundTag save() {
@@ -50,7 +51,10 @@ final class Parcel {
         tag.putString("Description", description);
         tag.putInt("Color", color);
         if (owner != null) tag.putUUID("Owner", owner);
-        if (price != null) tag.putLong("Price", price);
+        if (price != null) {
+            tag.putLong("Price", price);
+            tag.putString("Currency", currency);
+        }
         var trust = new ListTag();
         trusted.forEach(u -> trust.add(net.minecraft.nbt.NbtUtils.createUUID(u)));
         tag.put("Trusted", trust);
@@ -67,6 +71,7 @@ final class Parcel {
         var parcel = new Parcel(tag.getUUID("Id"), tag.getString("Name"), Kind.valueOf(tag.getString("Kind")));
         if (tag.hasUUID("Owner")) parcel.owner = tag.getUUID("Owner");
         if (tag.contains("Price", Tag.TAG_LONG) && tag.getLong("Price") >= 0) parcel.price = tag.getLong("Price");
+        if (tag.contains("Currency")) parcel.currency = tag.getString("Currency");
         parcel.group = tag.getString("Group");
         parcel.description = tag.getString("Description");
         parcel.color = tag.getInt("Color") & 0xffffff;

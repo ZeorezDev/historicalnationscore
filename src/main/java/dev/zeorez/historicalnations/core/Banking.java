@@ -13,24 +13,30 @@ public final class Banking implements EconomyApi {
     private Banking(MinecraftServer server) { this.server = server; }
     public static Banking get(MinecraftServer server) { return new Banking(server); }
     private WorldRegistry data() { return WorldRegistry.get(server); }
+    public String currency(String code) { return data().ledger.currency(code); }
     private UUID actor(ServerPlayer player) {
         require(player.server == server, "invalid_actor");
         return player.getUUID();
     }
-    public long getBalance(UUID player) { return data().ledger.balance(Account.player(player)); }
-    public long getTownBalance(UUID town) {
+    public long getBalance(UUID player) { return getBalance(player, REFERENCE); }
+    public long getBalance(UUID player, String currency) { return data().ledger.balance(Account.player(player).in(currency(currency))); }
+    public long getTownBalance(UUID town) { return getTownBalance(town, REFERENCE); }
+    public long getTownBalance(UUID town, String currency) {
         var registry = data();
         require(registry.getTownById(town).isPresent(), "unknown_town");
-        return registry.ledger.balance(Account.town(town));
+        return registry.ledger.balance(Account.town(town).in(currency(currency)));
     }
-    public long getNationBalance(UUID nation) {
+    public long getNationBalance(UUID nation) { return getNationBalance(nation, REFERENCE); }
+    public long getNationBalance(UUID nation, String currency) {
         var registry = data();
         require(registry.getNationById(nation).isPresent(), "unknown_nation");
-        return registry.ledger.balance(Account.nation(nation));
+        return registry.ledger.balance(Account.nation(nation).in(currency(currency)));
     }
-    public void transfer(ServerPlayer payer, UUID recipient, long amount) {
+    public void transfer(ServerPlayer payer, UUID recipient, long amount) { transfer(payer, recipient, amount, REFERENCE); }
+    public void transfer(ServerPlayer payer, UUID recipient, long amount, String currency) {
         var id = actor(payer);
-        data().ledger.post(Account.player(id), Account.player(Objects.requireNonNull(recipient)), amount, id.toString(), "payment");
+        String code = currency(currency);
+        data().ledger.post(Account.player(id).in(code), Account.player(Objects.requireNonNull(recipient)).in(code), amount, id.toString(), "payment");
     }
     Ledger.Account bank(ServerPlayer member, Bank kind, boolean leadership) {
         var id = actor(member);
@@ -44,20 +50,25 @@ public final class Banking implements EconomyApi {
         require(!leadership || registry.isNationLeader(id), "leader_only");
         return Account.nation(nation.id());
     }
-    public void deposit(ServerPlayer member, Bank kind, long amount) {
+    public void deposit(ServerPlayer member, Bank kind, long amount) { deposit(member, kind, amount, REFERENCE); }
+    public void deposit(ServerPlayer member, Bank kind, long amount, String currency) {
         var target = bank(member, kind, false);
         var id = member.getUUID();
-        data().ledger.post(Account.player(id), target, amount, id.toString(), "deposit");
+        String code = currency(currency);
+        data().ledger.post(Account.player(id).in(code), target.in(code), amount, id.toString(), "deposit");
     }
-    public void withdraw(ServerPlayer leader, Bank kind, long amount) {
+    public void withdraw(ServerPlayer leader, Bank kind, long amount) { withdraw(leader, kind, amount, REFERENCE); }
+    public void withdraw(ServerPlayer leader, Bank kind, long amount, String currency) {
         var source = bank(leader, kind, true);
         var id = leader.getUUID();
-        data().ledger.post(source, Account.player(id), amount, id.toString(), "withdrawal");
+        String code = currency(currency);
+        data().ledger.post(source.in(code), Account.player(id).in(code), amount, id.toString(), "withdrawal");
     }
-    public void paySale(ServerPlayer buyer, UUID town, UUID seller, long price, UUID property) {
+    public void paySale(ServerPlayer buyer, UUID town, UUID seller, long price, UUID property) { paySale(buyer, town, seller, price, property, REFERENCE); }
+    public void paySale(ServerPlayer buyer, UUID town, UUID seller, long price, UUID property, String currency) {
         var id = actor(buyer);
-        var from = Account.player(id);
-        var to = seller == null ? Account.town(town) : Account.player(seller);
+        var from = Account.player(id).in(currency(currency));
+        var to = (seller == null ? Account.town(town) : Account.player(seller)).in(from.currency());
         require(!id.equals(seller), "bad_amount");
         var ledger = data().ledger;
         if (price == 0) ledger.record(from, to, 0, id.toString(), "free allocation " + property);

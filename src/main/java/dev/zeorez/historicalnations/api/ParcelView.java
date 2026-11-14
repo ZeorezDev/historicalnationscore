@@ -7,7 +7,12 @@ import java.util.*;
 /** Immutable snapshot. A null owner denotes municipal land, a null price a closed offer. */
 public record ParcelView(UUID id, UUID town, ResourceLocation dimension, int chunkX, int chunkZ,
                         String name, String type, UUID owner, Long price, String group, int color,
-                        String description, Set<UUID> trusted, Map<String, Boolean> permissions, List<Box> boxes) {
+                        String description, Set<UUID> trusted, Map<String, Boolean> permissions, List<Box> boxes, String currency) {
+    public ParcelView(UUID id, UUID town, ResourceLocation dimension, int chunkX, int chunkZ, String name,
+                      String type, UUID owner, Long price, String group, int color, String description,
+                      Set<UUID> trusted, Map<String, Boolean> permissions, List<Box> boxes) {
+        this(id,town,dimension,chunkX,chunkZ,name,type,owner,price,group,color,description,trusted,permissions,boxes,EconomyApi.REFERENCE);
+    }
     public ParcelView {
         trusted = Set.copyOf(trusted);
         permissions = Map.copyOf(permissions);
