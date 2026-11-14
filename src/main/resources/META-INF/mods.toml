@@ -6,6 +6,7 @@ license="GPL-3.0-only"
 modId="historical_nations"
 version="0.6.0"
 displayName="Historical Nations Core"
+logoFile="historical_nations_logo.png"
 description="World-specific towns, nations, citizenship and OPAC-protected town territory."
 
 [[dependencies.historical_nations]]
