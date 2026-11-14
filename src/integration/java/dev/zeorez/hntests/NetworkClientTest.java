@@ -51,6 +51,14 @@ public final class NetworkClientTest {
 
     @SubscribeEvent
     public static void message(ClientChatReceivedEvent.System event) {
+        if (ACTOR.equals("HnNetB") && event.getMessage().getString().startsWith("HN_TEST_TRADE ")) {
+            var ids = event.getMessage().getString().split(" ");
+            var connection = Minecraft.getInstance().getConnection();
+            connection.sendCommand("trade accept "+ids[1]);
+            connection.sendCommand("trade accept "+ids[1]);
+            connection.sendCommand("trade accept "+ids[2]);
+            connection.sendCommand("town bank deposit 1");
+        }
         if (!ACTOR.isEmpty() && event.getMessage().getString().equals("HN_TEST_BID")) {
             var connection = Minecraft.getInstance().getConnection();
             connection.sendCommand("plot claim");

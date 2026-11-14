@@ -35,6 +35,7 @@ public final class PrototypeServerTest {
     private boolean ran;
     private boolean saleOffered;
     private int saleTick;
+    private String competingTrade;
 
     public PrototypeServerTest() {
         MinecraftForge.EVENT_BUS.addListener(this::tick);
@@ -43,6 +44,29 @@ public final class PrototypeServerTest {
         String phase = System.getProperty("hn.test.phase", "");
         MinecraftServer server = event.getServer();
         if (ran || phase.isEmpty() || event.phase != TickEvent.Phase.END || server.getTickCount() < 40) return;
+        if (phase.equals("tradeNetwork")) {
+            var a = server.getPlayerList().getPlayerByName("HnNetA");
+            var b = server.getPlayerList().getPlayerByName("HnNetB");
+            var api = HistoricalNationsApi.get(server);
+            try {
+                if (server.getTickCount() > 12000) throw new AssertionError("trade network timeout");
+                if (a == null || b == null) return;
+                var suite = new TradeTest(new Suite(server));
+                if (competingTrade == null) {
+                    if (!api.isTownMayor(a.getUUID()) || !api.getPlayerTown(a.getUUID()).equals(api.getPlayerTown(b.getUUID()))) return;
+                    competingTrade = suite.setup(a,b);
+                    return;
+                }
+                if (!suite.acknowledged(b)) return;
+                suite.finish(a,b,competingTrade);
+                LogUtils.getLogger().info("HN INTEGRATION PASS tradeNetwork");
+            } catch (Exception | AssertionError error) {
+                LogUtils.getLogger().error("HN INTEGRATION FAIL tradeNetwork",error);
+            }
+            ran = true;
+            server.halt(false);
+            return;
+        }
         if (phase.equals("network")) {
             var a = server.getPlayerList().getPlayerByName("HnNetA");
             var b = server.getPlayerList().getPlayerByName("HnNetB");
@@ -100,6 +124,7 @@ public final class PrototypeServerTest {
                 case "currencyLegacy" -> new CurrencyTest(suite).legacy();
                 case "currencySetup" -> new CurrencyTest(suite).setup();
                 case "currencyVerify" -> new CurrencyTest(suite).verify();
+                case "tradeRestart" -> new TradeTest(suite).restart();
                 case "economySetup" -> new EconomyTest(suite).setup();
                 case "economyVerify" -> new EconomyTest(suite).verify();
                 default -> throw new IllegalArgumentException("Unknown test phase " + phase);
