@@ -118,11 +118,13 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
         require(town.mayor().equals(player), "mayor_only");
         return town;
     }
-    private Nation ledNation(UUID player) {
+    Nation ledNation(UUID player) {
         Nation nation = country(player);
         require(isNationLeader(player), "leader_only");
         return nation;
     }
+
+    public String officialTownCurrency(UUID town) { return ledger.market.official(townNations.get(town)); }
 
     public Town createTown(UUID actor, String name) {
         require(!playerTowns.containsKey(actor), "already_citizen");
@@ -228,8 +230,10 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
         require(!townNations.containsKey(town.id()), "already_in_nation");
         String clean = cleanName(name);
         require(findNation(clean).isEmpty(), "name_taken");
+        ledger.available();
         Nation nation = new Nation(UUID.randomUUID(), clean, town.id());
         nations.put(nation.id(), nation);
+        ledger.market.bank(nation.id());
         joinNation(town, nation);
         return nation;
     }

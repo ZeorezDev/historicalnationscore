@@ -7,6 +7,7 @@ import java.util.UUID;
 
 /** Logical server thread only. Amounts are whole currency units. Rejections throw RuleViolation. */
 public interface EconomyApi {
+    String REFERENCE = "TRY";
     enum Bank { TOWN, NATION }
     static EconomyApi get(MinecraftServer server) { return Banking.get(server); }
 
@@ -16,4 +17,10 @@ public interface EconomyApi {
     void transfer(ServerPlayer payer, UUID recipient, long amount);
     void deposit(ServerPlayer member, Bank bank, long amount);
     void withdraw(ServerPlayer leader, Bank bank, long amount);
+    long getBalance(UUID player, String currency);
+    long getTownBalance(UUID town, String currency);
+    long getNationBalance(UUID nation, String currency);
+    void transfer(ServerPlayer payer, UUID recipient, long amount, String currency);
+    void deposit(ServerPlayer member, Bank bank, long amount, String currency);
+    void withdraw(ServerPlayer leader, Bank bank, long amount, String currency);
 }

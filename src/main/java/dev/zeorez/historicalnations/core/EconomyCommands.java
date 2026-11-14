@@ -20,9 +20,12 @@ public final class EconomyCommands {
     public static String format(long value) {
         return TerritoryConfig.SYMBOL.get() + value + " " + TerritoryConfig.CURRENCY.get();
     }
-    private static Component msg(String key, Object... args) { return Component.translatable("historical_nations." + key, args); }
-    private interface Action { Component run(CommandContext<CommandSourceStack> c) throws CommandSyntaxException; }
-    private static Command<CommandSourceStack> run(Action action) {
+    public static String format(long value, String code) {
+        return MonetaryPolicy.REF.equals(code) ? format(value) : value + " " + code;
+    }
+    static Component msg(String key, Object... args) { return Component.translatable("historical_nations." + key, args); }
+    interface Action { Component run(CommandContext<CommandSourceStack> c) throws CommandSyntaxException; }
+    static Command<CommandSourceStack> run(Action action) {
         return c -> {
             try {
                 var message = action.run(c);
@@ -33,16 +36,16 @@ public final class EconomyCommands {
             }
         };
     }
-    private static UUID target(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+    static UUID target(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
         var players = GameProfileArgument.getGameProfiles(c, "player");
         require(players.size() == 1, "single_player");
         return players.iterator().next().getId();
     }
     private static long amount(CommandContext<CommandSourceStack> c) { return LongArgumentType.getLong(c,"amount"); }
     private static Banking service(CommandContext<CommandSourceStack> c) { return Banking.get(c.getSource().getServer()); }
-    private static Ledger ledger(CommandContext<CommandSourceStack> c) { return WorldRegistry.get(c.getSource().getServer()).ledger; }
+    static Ledger ledger(CommandContext<CommandSourceStack> c) { return WorldRegistry.get(c.getSource().getServer()).ledger; }
     private static Component statement(Ledger ledger, Account account) {
-        var message = msg("account", account.toString(), format(ledger.balance(account))).copy();
+        var message = msg("account", account.toString(), format(ledger.balance(account), account.currency())).copy();
         for (String entry : ledger.history(account)) message.append("\n" + entry);
         return message;
     }
@@ -76,12 +79,12 @@ public final class EconomyCommands {
                 boolean tax = name.equals("tax");
                 var rate = literal(name).executes(run(c -> {
                     var account = service(c).bank(c.getSource().getPlayerOrException(), kind, false);
-                    return msg("daily_amount", format(ledger(c).rate(account, tax)));
+                    return msg("daily_amount", format(ledger(c).rate(account, tax), ledger(c).feeCurrency(account,tax)));
                 }));
                 rate.then(literal("set").then(argument("amount", LongArgumentType.longArg(0)).executes(run(c -> {
                     var account = service(c).bank(c.getSource().getPlayerOrException(), kind, true);
                     ledger(c).rate(account, tax, amount(c));
-                    return msg("daily_amount", format(amount(c)));
+                    return msg("daily_amount", format(amount(c), ledger(c).feeCurrency(account,tax)));
                 }))));
                 root.then(rate);
             }
@@ -90,7 +93,7 @@ public final class EconomyCommands {
         var admin = literal("economy").requires(source -> source.hasPermission(2));
         for (String operation : List.of("give", "take", "set", "info")) {
             var command = literal(operation);
-            for (var kind : Ledger.Kind.values()) {
+            for (var kind : List.of(Ledger.Kind.PLAYER, Ledger.Kind.TOWN, Ledger.Kind.NATION)) {
                 ArgumentBuilder<CommandSourceStack, ?> account = kind == Ledger.Kind.PLAYER
                         ? argument("player", GameProfileArgument.gameProfile()) : argument("name", StringArgumentType.string());
                 if (operation.equals("info")) account.executes(run(c -> statement(ledger(c), account(c,kind))));
@@ -106,11 +109,13 @@ public final class EconomyCommands {
             admin.then(command);
         }
         dispatcher.register(admin);
+        CurrencyCommands.register(dispatcher);
     }
     private static Account account(CommandContext<CommandSourceStack> c, Ledger.Kind kind) throws CommandSyntaxException {
         var data = WorldRegistry.get(c.getSource().getServer());
         return switch (kind) {
             case PLAYER -> Account.player(target(c));
+            case RESERVE -> throw new IllegalArgumentException("reserve");
             case TOWN -> Account.town(data.namedTown(StringArgumentType.getString(c,"name")).id());
             case NATION -> Account.nation(data.namedNation(StringArgumentType.getString(c,"name")).id());
         };

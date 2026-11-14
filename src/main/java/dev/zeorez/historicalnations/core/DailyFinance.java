@@ -30,18 +30,19 @@ public final class DailyFinance {
         ledger.lastDay = day;
         data.setDirty();
         if (first) return;
+        ledger.market.settle(day);
 
         for (var town : data.towns()) {
             var bank = Account.town(town.id());
             long tax = ledger.rate(bank, true);
             if (tax > 0) for (UUID citizen : data.members(town.id()))
-                collect(server, ledger, Account.player(citizen), bank, tax, "town tax", citizen, town.mayor());
+                collect(server, ledger, Account.player(citizen).in(ledger.feeCurrency(bank,true)), bank.in(ledger.feeCurrency(bank,true)), tax, "town tax", citizen, town.mayor());
         }
         for (var nation : data.nations()) {
             var bank = Account.nation(nation.id());
             long tax = ledger.rate(bank, true);
             if (tax > 0) for (var town : data.getNationTowns(nation.id()))
-                collect(server, ledger, Account.town(town.id()), bank, tax, "nation tax", town.mayor(), data.towns.get(nation.capitalTown()).mayor());
+                collect(server, ledger, Account.town(town.id()).in(ledger.feeCurrency(bank,true)), bank.in(ledger.feeCurrency(bank,true)), tax, "nation tax", town.mayor(), data.towns.get(nation.capitalTown()).mayor());
         }
         for (var town : data.towns()) upkeep(server, ledger, Account.town(town.id()), town.mayor());
         for (var nation : data.nations())
@@ -49,7 +50,7 @@ public final class DailyFinance {
     }
     private static void upkeep(MinecraftServer server, Ledger ledger, Account bank, UUID leader) {
         long amount = ledger.rate(bank, false);
-        if (amount > 0) collect(server, ledger, bank, null, amount, "upkeep", leader, leader);
+        if (amount > 0) collect(server, ledger, bank.in(ledger.feeCurrency(bank,false)), null, amount, "upkeep", leader, leader);
     }
     private static void collect(MinecraftServer server, Ledger ledger, Account from, Account to,
                                 long amount, String reason, UUID payer, UUID recipient) {
@@ -57,7 +58,7 @@ public final class DailyFinance {
             ledger.post(from, to, amount, "server", reason);
         } catch (RuleViolation rejected) {
             ledger.record(from, to, amount, "server", "UNPAID " + reason + " (" + rejected.getMessage() + ")");
-            var message = Component.translatable("historical_nations.unpaid", from.toString(), EconomyCommands.format(amount),
+            var message = Component.translatable("historical_nations.unpaid", from.toString(), EconomyCommands.format(amount,from.currency()),
                     Component.translatable("historical_nations." + rejected.getMessage()));
             for (UUID id : new LinkedHashSet<>(List.of(payer, recipient))) {
                 var player = server.getPlayerList().getPlayer(id);

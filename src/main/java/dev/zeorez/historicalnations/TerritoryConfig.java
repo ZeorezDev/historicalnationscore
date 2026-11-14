@@ -16,6 +16,10 @@ public final class TerritoryConfig {
     public static final ForgeConfigSpec.LongValue STARTING = BUILDER.defineInRange("startingBalance", 0L, 0L, Long.MAX_VALUE);
     public static final ForgeConfigSpec.EnumValue<Liquidation> LIQUIDATION =
             BUILDER.defineEnum("bankLiquidation", Liquidation.REQUIRE_EMPTY);
+    public static final ForgeConfigSpec.LongValue ISSUE_LIMIT = BUILDER.defineInRange("dailyIssueLimit", 10000L, 0L, Long.MAX_VALUE);
+    public static final ForgeConfigSpec.IntValue FX_LIMIT = BUILDER.defineInRange("dailyFxLimitBps", 300, 0, 2000);
+    public static final ForgeConfigSpec.IntValue ACTIVITY = BUILDER.defineInRange("economicActivityBaseline", 1000, 1, Integer.MAX_VALUE);
+    public static final ForgeConfigSpec.BooleanValue INDEX_FEES = BUILDER.define("indexTaxesAndUpkeep", false);
     public static final ForgeConfigSpec SPEC = BUILDER.build();
 
     private TerritoryConfig() {}

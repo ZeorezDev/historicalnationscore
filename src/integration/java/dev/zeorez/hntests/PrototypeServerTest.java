@@ -97,6 +97,9 @@ public final class PrototypeServerTest {
                 case "municipalSetup" -> new MunicipalTest(suite).setup();
                 case "municipalVerify" -> new MunicipalTest(suite).verify();
                 case "boundaries" -> new MunicipalTest(suite).boundaries();
+                case "currencyLegacy" -> new CurrencyTest(suite).legacy();
+                case "currencySetup" -> new CurrencyTest(suite).setup();
+                case "currencyVerify" -> new CurrencyTest(suite).verify();
                 case "economySetup" -> new EconomyTest(suite).setup();
                 case "economyVerify" -> new EconomyTest(suite).verify();
                 default -> throw new IllegalArgumentException("Unknown test phase " + phase);

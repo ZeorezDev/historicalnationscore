@@ -1,5 +1,11 @@
 # Sürüm geçmişi
 
+## 0.5.0 · Ulusal paralar ve merkez bankaları
+
+- v0.4.0 bakiyeleri, vergileri ve ilanları ortak TRY olarak korunur. Oyuncu, belediye ve devlet hesapları aynı anda birden fazla para tutabilir.
+- Liderler kalıcı ulusal para kodu oluşturabilir, günlük limit içinde hazineye para basabilir ve politika faizi belirleyebilir. Dağılan devletlerin paraları tarihsel kayıtta kalır.
+- Döviz havuzları oyuncuların aktardığı rezervleri kullanır. Kur, fiyat endeksi ve isteğe bağlı gider endekslemesi günlük hesaplanır.
+
 ## 0.4.0 · Ekonomi ve bankacılık
 
 - Oyuncu cüzdanı, belediye bankası, devlet hazinesi, işlem geçmişi ve operatör komutları eklendi. Para birimi, ilk giriş ödeneği ve kurum tasfiyesi sunucu ayarlarından seçilebilir.

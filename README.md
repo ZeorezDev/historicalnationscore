@@ -1,4 +1,4 @@
-# Historical Nations Core · v0.4.0
+# Historical Nations Core · v0.5.0
 
 Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehirleri, devletleri ve vatandaşlığı yönetir. Oyuncular yönetim işlemlerini sohbet komutlarıyla yapar. Her dünya kaydı kendi şehir ve devlet verisini taşır.
 
@@ -14,7 +14,7 @@ Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehi
 ## Kurulum ve derleme
 
 1. JDK 17 ile `JAVA_HOME` ayarlayın. Depo kökünde Windows için `.\gradlew.bat build`, Linux veya macOS için `./gradlew build` çalıştırın.
-2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-0.4.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
+2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-0.5.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
 3. Sunucuyu açın. Oyunda `/town list` ve `/town claimstatus` komutlarıyla kurulumu deneyin. Sohbet metinleri istemcinin dil ayarını izler.
 
 [Forge 1.20.1 indirmeleri](https://files.minecraftforge.net/net/minecraftforge/forge/index_1.20.1.html) · [Resmî OPAC 0.33.0 paketleri](https://chocolateminecraft.com/maven/xaero/pac/open-parties-and-claims-forge-1.20.1/0.33.0/)
@@ -69,7 +69,34 @@ Vergi ve bakım sıfırla başlar. Sunucu, UTC takvim günü değiştiğinde sı
 
 Diğer modlar sunucu iş parçacığında `EconomyApi.get(server)` üzerinden `getBalance(UUID)`, `getTownBalance(UUID)` ve `getNationBalance(UUID)` çağrılarını kullanabilir. `transfer(ServerPlayer, UUID, long)` oyuncular arası ödeme yapar. `deposit(ServerPlayer, EconomyApi.Bank, long)` ve `withdraw(ServerPlayer, EconomyApi.Bank, long)` mevcut fonları kişisel hesap ile oyuncunun bağlı olduğu kurum arasında taşır. Banka seçenekleri `TOWN` ve `NATION` değerleridir. Yetersiz bakiye, geçersiz tutar veya yetki durumunda `RuleViolation` döner. API üzerinden para basma işlemi sunulmaz.
 
-Historical Documents 0.3.0 dağıtım JAR’ı Core sürümünü tam olarak 0.2.0’a sabitler. İki modu birlikte kurmak için Documents paketinin bağımlılık aralığının Core 0.4.0’ı kapsaması gerekir.
+Historical Documents 0.3.0 dağıtım JAR’ı Core sürümünü tam olarak 0.2.0’a sabitler. İki modu birlikte kurmak için Documents paketinin bağımlılık aralığının Core 0.5.0’ı kapsaması gerekir.
+
+## Ulusal paralar ve merkez bankası
+
+v0.4.0 dünyasında var olan cüzdanlar, banka hesapları, vergi, bakım ve açık satış ilanları `TRY` cinsinden yüklenir. Referans paranın adı ve simgesi dünya ayarlarından okunur. Yeni devletlerin merkez bankası otomatik oluşur. Devlet lideri örneğin `/nation currency create Reichsmark RM DEM` ile resmî parayı tanımlar. Boşluk içeren adları ve ₺ gibi simgeleri çift tırnak içine alın. Kod 3–6 Latin harfinden oluşur ve kalıcıdır. Dağılan devletin parası listede † ile görünür. Eski bakiyelerle ödeme ve rezervli döviz işlemleri sürer.
+
+| Komut | İşlem |
+| --- | --- |
+| `/nation currency list`, `/nation currency info` | Kayıtlı paralar ve devletin kullandığı para. |
+| `/money balance [kod]`, `/money pay <oyuncu> <tutar> [kod]` | Cüzdan bakiyeleri ve belirtilen parayla ödeme. Eski ödeme komutu TRY kullanır. |
+| `/town bank <kod>`, `/nation bank <kod>` | Kuruma ait seçili para bakiyesi. `bank deposit <tutar> [kod]`, `bank withdraw <tutar> [kod]` ve `bank history [kod]` aynı para seçimini destekler. |
+| `/plot forsale <fiyat> [kod]`, `/quarter forsale <fiyat> [kod]` | Varsayılan olarak arazinin bağlı olduğu devletin o günkü resmî parasını kullanır. İlan kapatılana kadar parası sabittir. |
+| `/nation centralbank issue <tutar>`, `/nation centralbank interest <yüzde>` | Lider kendi parasını devlet hazinesine basar ve %0–100 arasında politika faizi belirler. Günlük basım limiti varsayılan 10.000 birimdir. |
+| `/nation economy`, `/nation centralbank info` | Arz, günlük enflasyon, başlangıç değeri 1 olan fiyat endeksi, TRY kuru ve politika faizi. Resmî para kurulmadan önce arz ve kur ortak TRY’ye aittir. |
+| `/exchange rates`, `/exchange history <kod>` | Bir birim paranın TRY karşılığı, mevcut rezervler ve son 32 günlük kur kaydı. |
+| `/exchange fund <kod> <tutar>` | Oyuncunun mevcut bakiyesinden ortak döviz rezervine karşılıksız ve kalıcı katkı. |
+| `/exchange convert <kaynak> <hedef> <tutar>` | Alınan miktar, verilen miktar × kaynak kuru ÷ hedef kuru ile hesaplanır ve tam birime aşağı yuvarlanır. Sıfır çıktı, yetersiz fon veya dolu hedef hesapta işlem reddedilir. |
+
+**Dövizi başlatmak için** bir lider önce para basabilir, ardından hazineden çekerek `/exchange fund DEM 500` ile rezerv sağlayabilir. TRY karşılığı satmak için ayrıca TRY rezervi gerekir. Her yeni para 1 TRY kuruyla başlar. Bir dönüşümde oyuncu ve havuzun her iki para bakiyesi aynı kayıt içinde güncellenir.
+
+**Günlük model** UTC günü değiştiğinde bir kez çalışır. Arz, rezerv dahil tüm hesapların toplamıdır. Model, önceki kapanışa göre arz artışını, oyuncular arası ödemeleri ve ücretli mülk satışlarını kullanır. Aşağıdaki formüllerde 100 baz puan yüzde 1’dir. Her bölmede tam sayıya doğru kesilir.
+
+- Arz büyümesi = 10.000 × arz farkı / en büyük(önceki arz, faaliyet tabanı), ±4.000 baz puanla sınırlı. Faaliyet = 10.000 × günlük işlem hacmi / en büyük(güncel arz, faaliyet tabanı), en fazla 2.000 baz puan.
+- Günlük enflasyon = büyüme / 8 − faaliyet / 40 − politika faizi / 50, ±500 baz puanla sınırlı. Endeks bu oranla çarpılarak güncellenir. Politika faizi yalnızca bu hesapta kullanılır. Özel para oluşturmamış bir devlette yerel faaliyet, o devletin oyuncularının TRY ödemeleri ve alımlarıdır.
+- Kur hareketi = TRY enflasyonu − ilgili para enflasyonu + talep etkisi. Talep etkisi, oyuncuların dövizde aldığı eksi sattığı birimlerin arza oranıdır. Bu oran ±4.000 baz puanda sınırlandırılıp sekize bölünür. Günlük kur değişimi varsayılan ±%3’tür. Kurlar ve endeksler altı ondalık basamakla saklanır.
+- Dünya ayarları `dailyIssueLimit`, `dailyFxLimitBps`, `economicActivityBaseline` (varsayılan 1.000) ve `indexTaxesAndUpkeep` (varsayılan kapalı) değerleridir. Vergi veya bakım tutarı belirlenirken kurumun o günkü resmî parası ve bu paranın endeksi saklanır. Endeksleme açılırsa tahsilat, belirlenen tutar × güncel endeks / başlangıç endeksi üzerinden yapılır. Oyuncu bakiyesi enflasyon nedeniyle doğrudan değiştirilmez.
+
+**Java API.** Eski `EconomyApi` çağrıları TRY kullanır. Altı bakiye ve işlem metodunun son parametresi `String currency` olan sürümleri kayıtlı para kodu kabul eder. `ParcelView.currency()` ilan fiyatının para kodunu verir.
 
 ## Belediye, plot ve alt parsel komutları
 
