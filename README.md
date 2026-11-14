@@ -1,5 +1,7 @@
 # Historical Nations Core · v0.6.0
 
+<img src="src/main/resources/historical_nations_logo.png" alt="Historical Nations Core amblemi" width="320">
+
 Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehirleri, devletleri ve vatandaşlığı yönetir. Oyuncular yönetim işlemlerini sohbet komutlarıyla yapar. Her dünya kaydı kendi şehir ve devlet verisini taşır.
 
 | Bileşen | Bu sürüm |
