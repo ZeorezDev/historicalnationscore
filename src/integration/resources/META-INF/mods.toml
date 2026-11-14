@@ -3,11 +3,11 @@ loaderVersion="[47,48)"
 license="GPL-3.0-only"
 [[mods]]
 modId="hn_integration_tests"
-version="0.5.0"
+version="0.6.0"
 displayName="Historical Nations Dedicated Server Tests"
 [[dependencies.hn_integration_tests]]
 modId="historical_nations"
 mandatory=true
-versionRange="[0.4.0,0.5.0]"
+versionRange="[0.4.0,0.6.0]"
 ordering="AFTER"
 side="SERVER"

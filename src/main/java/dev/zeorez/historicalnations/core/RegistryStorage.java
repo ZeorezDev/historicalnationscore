@@ -48,6 +48,7 @@ final class RegistryStorage {
         root.put("Territories", territories);
         registry.properties.save(root);
         registry.ledger.save(root);
+        registry.trade.save(root);
         return root;
     }
 
@@ -156,6 +157,7 @@ final class RegistryStorage {
         }
         registry.properties.load(root);
         registry.ledger.load(root);
+        registry.trade.load(root);
         if (!root.contains("Plots") && !registry.territories.isEmpty()) registry.setDirty();
         return registry;
     }

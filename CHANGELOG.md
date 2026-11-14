@@ -1,5 +1,11 @@
 # Sürüm geçmişi
 
+## 0.6.0 · Uluslararası ticaret ve gümrük
+
+- Devlet vatandaşları ana ellerindeki eşyayı belirli bir oyuncuya mevcut para birimleriyle satabilir. Alıcı, gümrük dahil toplamı kabulden önce görür.
+- Devlet liderleri ithalat vergisi belirleyebilir ve diğer devletlerle kayıtlı ticarete ambargo koyabilir.
+- Uluslararası işlemler, gümrük gelirleri ve ticaret ortakları dünya kaydında saklanır. Satış bedeli mevcut ekonomik faaliyet hesabına eklenir.
+
 ## 0.5.0 · Ulusal paralar ve merkez bankaları
 
 - v0.4.0 bakiyeleri, vergileri ve ilanları ortak TRY olarak korunur. Oyuncu, belediye ve devlet hesapları aynı anda birden fazla para tutabilir.

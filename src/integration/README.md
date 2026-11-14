@@ -1,5 +1,13 @@
 # Prototipin sunucu testleri
 
+## v0.6.0 doğrulaması
+
+1. v0.5.0 bölümündeki `currencyVerify` tamamlanmış dünyayı sunucu kapalıyken yeni bir dizine kopyalayın. v0.6.0 dağıtım ve test JAR’larını OPAC 0.33.0 ile kullanın.
+2. Kopyada `tradeNetwork` çalıştırın. Aşağıdaki iki Forge istemcisini başlatın. Test eski DEM bakiyesini okur, OPAC claim ve daire inşa izinlerini kontrol eder. İki ulusun oyuncuları NBT etiketli 64 demir külçesi için 500 RHM bedel ve 50 RHM gümrük ile işlem yapar. Alıcı aynı teklifin iki kabulünü ve aynı eşya için rakip bir teklifi ağ üzerinden gönderir. Her iki envanter, bakiyeler ve devlet hesapları kontrol edilir.
+3. Aynı dünyayı ayrı bir süreçte `tradeRestart` ile açın. İthalat ve ihracatta birer işlem, 500 RHM hacim, 50 RHM hazine bakiyesi, yakın geçmiş ve ambargo ilişkisi doğrulanır. Devlet dağıtılınca karşı tarafın ambargo listesi temizlenir.
+
+Forge 47.4.28 ve Java 17 ile `HN INTEGRATION PASS tradeNetwork` ve `HN INTEGRATION PASS tradeRestart` alındı. Değişen oran, mesafe, farklı NBT, dolu envanter, yetersiz toplam ödeme, sonradan konulan ambargo, taraf yetkileri ve yurt içi sıfır vergi de kontrol edildi. İlk denemede test modülü kayıt görüntüsünü yanlış eşlenmiş bir Java metodu üzerinden okudu. Test düzeltildikten sonra iki aşama temiz dünya kopyasında geçti. Yeniden başlatma, sunucunun normal kayıt ve kapanış yolunu kullanır.
+
 ## v0.5.0 doğrulaması
 
 Üretim JAR’ı Java 17 ile derlendi ve Forge 47.4.28 ile OPAC 0.33.0 kullanılan dedicated server üzerinde sınandı. Aşağıdaki senaryolar sunucunun gerçek komut ağacını Forge test oyuncuları ile kullanır.

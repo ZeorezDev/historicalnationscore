@@ -16,6 +16,7 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     public final dev.zeorez.historicalnations.property.PropertyBook properties =
             new dev.zeorez.historicalnations.property.PropertyBook(this);
     final Ledger ledger = new Ledger(this);
+    final TradeBook trade = new TradeBook(this);
     static final String FILE = "historical_nations";
     private static final Pattern NAME = Pattern.compile("[\\p{L}\\p{N}][\\p{L}\\p{M}\\p{N} _-]{0,31}");
     final Map<UUID, Town> towns = new LinkedHashMap<>();
@@ -268,7 +269,9 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     }
     public void disbandNation(UUID actor) {
         Nation nation = ledNation(actor);
+        trade.available();
         ledger.close(Ledger.Account.nation(nation.id()), actor);
+        trade.disband(nation.id());
         nations.remove(nation.id());
         townNations.values().removeIf(nation.id()::equals);
         nationInvites.removeIf(i -> i.issuer().equals(nation.id()));

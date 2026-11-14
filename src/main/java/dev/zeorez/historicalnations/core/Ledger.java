@@ -102,6 +102,20 @@ final class Ledger {
         if (from != null) require(balance(from) >= amount, "insufficient_funds");
         if (to != null) require(balance(to) <= Long.MAX_VALUE - amount, "balance_limit");
     }
+    void settleGoods(TradeOffer offer) {
+        String code = currency(offer.currency());
+        Account payer = Account.player(offer.buyer()).in(code);
+        Account seller = Account.player(offer.seller()).in(code);
+        Account treasury = Account.nation(offer.destination()).in(code);
+        require(balance(payer) >= offer.total(), "insufficient_funds");
+        checkTransfer(payer, seller, offer.price());
+        long duty = offer.duty();
+        if (duty > 0) checkTransfer(payer, treasury, duty);
+        String actor = offer.buyer().toString();
+        post(payer, seller, offer.price(), actor, "goods sale " + offer.id());
+        if (duty > 0) post(payer, treasury, duty, actor, "import duty " + offer.id());
+        market.trade(payer, offer.price());
+    }
     /** Null endpoints are reserved for internal issuance and sinks. */
     void post(Account from, Account to, long amount, String actor, String reason) {
         checkTransfer(from, to, amount);

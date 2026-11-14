@@ -19,6 +19,7 @@ public final class HistoricalNations {
         MinecraftForge.EVENT_BUS.register(dev.zeorez.historicalnations.property.QuarterCommands.class);
         MinecraftForge.EVENT_BUS.register(dev.zeorez.historicalnations.property.ParcelProtection.class);
         MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.core.DailyFinance::tick);
+        MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.core.TradeCommands::tick);
         MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.core.DailyFinance::login);
         MinecraftForge.EVENT_BUS.addListener(TerritoryHooks::register);
         MinecraftForge.EVENT_BUS.addListener(this::serverStarted);
@@ -31,6 +32,7 @@ public final class HistoricalNations {
 
     private void registerCommands(RegisterCommandsEvent event) {
         NationCommands.register(event.getDispatcher());
+        dev.zeorez.historicalnations.core.TradeCommands.register(event.getDispatcher());
         dev.zeorez.historicalnations.core.EconomyCommands.register(event.getDispatcher());
         dev.zeorez.historicalnations.property.PropertyCommands.register(event.getDispatcher());
     }
