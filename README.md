@@ -1,4 +1,4 @@
-# Historical Nations Core · v0.5.0
+# Historical Nations Core · v0.6.0
 
 Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehirleri, devletleri ve vatandaşlığı yönetir. Oyuncular yönetim işlemlerini sohbet komutlarıyla yapar. Her dünya kaydı kendi şehir ve devlet verisini taşır.
 
@@ -14,7 +14,7 @@ Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehi
 ## Kurulum ve derleme
 
 1. JDK 17 ile `JAVA_HOME` ayarlayın. Depo kökünde Windows için `.\gradlew.bat build`, Linux veya macOS için `./gradlew build` çalıştırın.
-2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-0.5.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
+2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-0.6.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
 3. Sunucuyu açın. Oyunda `/town list` ve `/town claimstatus` komutlarıyla kurulumu deneyin. Sohbet metinleri istemcinin dil ayarını izler.
 
 [Forge 1.20.1 indirmeleri](https://files.minecraftforge.net/net/minecraftforge/forge/index_1.20.1.html) · [Resmî OPAC 0.33.0 paketleri](https://chocolateminecraft.com/maven/xaero/pac/open-parties-and-claims-forge-1.20.1/0.33.0/)
@@ -69,7 +69,23 @@ Vergi ve bakım sıfırla başlar. Sunucu, UTC takvim günü değiştiğinde sı
 
 Diğer modlar sunucu iş parçacığında `EconomyApi.get(server)` üzerinden `getBalance(UUID)`, `getTownBalance(UUID)` ve `getNationBalance(UUID)` çağrılarını kullanabilir. `transfer(ServerPlayer, UUID, long)` oyuncular arası ödeme yapar. `deposit(ServerPlayer, EconomyApi.Bank, long)` ve `withdraw(ServerPlayer, EconomyApi.Bank, long)` mevcut fonları kişisel hesap ile oyuncunun bağlı olduğu kurum arasında taşır. Banka seçenekleri `TOWN` ve `NATION` değerleridir. Yetersiz bakiye, geçersiz tutar veya yetki durumunda `RuleViolation` döner. API üzerinden para basma işlemi sunulmaz.
 
-Historical Documents 0.3.0 dağıtım JAR’ı Core sürümünü tam olarak 0.2.0’a sabitler. İki modu birlikte kurmak için Documents paketinin bağımlılık aralığının Core 0.5.0’ı kapsaması gerekir.
+Historical Documents 0.3.0 dağıtım JAR’ı Core sürümünü tam olarak 0.2.0’a sabitler. İki modu birlikte kurmak için Documents paketinin bağımlılık aralığının Core 0.6.0’ı kapsaması gerekir.
+
+## Eşya ticareti ve gümrük
+
+Satıcı ve alıcı birer devletin vatandaşı olmalı ve aynı boyutta birbirlerine en fazla sekiz blok uzakta durmalıdır. Satıcı eşyayı ana eline alır. Örneğin `/trade offer Ayse 64 500 DEM`, 64 eşyanın tamamını 500 DEM karşılığı teklif eder. Alıcıya eşya, satıcının payı, gümrük tutarı, toplam ödeme ve kabul komutu gönderilir. %10 ithalat vergisiyle alıcı 550 DEM öder. Satıcıya 500 DEM, alıcının devlet hazinesine 50 DEM geçer.
+
+| Komut | Kullanım |
+| --- | --- |
+| `/trade info <id>`, `/trade accept <id>` | Taraflar teklifi inceleyebilir. Belirtilen alıcı kabul edebilir. |
+| `/trade deny <id>`, `/trade cancel <id>` | Alıcı teklifi reddeder veya satıcı iptal eder. Teklifler 120 saniye geçerlidir. Satıcı aynı anda 32 açık teklif tutabilir. |
+| `/nation tariff info`, `/nation tariff set <yüzde>`, `/nation tariff clear` | Lider ithalat vergisini %0–50 arasında, iki ondalık basamakla belirler. Varsayılan %0’dır. |
+| `/nation embargo add <devlet>`, `remove <devlet>`, `list` | Lider diğer devlete ambargo koyar veya kaldırır. Tek tarafın kararı çift yönlü kayıtlı ticareti kapatır. Liste hem uygulanan hem alınan ambargoları gösterir. |
+| `/nation trade stats`, `imports`, `exports` | Tamamlanan uluslararası işlemlerin sayısı, para koduna göre hacim ve gümrük geliri, işlem sayısına göre ilk beş ortak. İthalat ve ihracat görünümleri son 16 kaydı da gösterir. |
+
+Gümrük yalnızca iki farklı devlet arasında uygulanır ve kesirli tutar bir üst tam birime yuvarlanır. Vatandaşlık veya oran değişince eski koşullarla ödeme yapılamaz. Alıcının normal envanterinde eşyanın tamamı için yer ve seçili parada toplam tutar bulunmalıdır. Teklif süresince mal satıcının elinde kalır. Kabul anında miktar, eşyanın NBT verileri ve Forge özellikleri yeniden kontrol edilir.
+
+Gümrük ve ambargo `/trade` ile kaydedilen satışlara uygulanır. Yere atılan eşyalar, sandıklar ve başka modların aktarımları bu kapsamın dışındadır. Bir satış ekonomik faaliyet hacmine satış bedeli kadar, bir defa eklenir. İthalat ve ihracat hacimleri her para için kendi biriminde gösterilir.
 
 ## Ulusal paralar ve merkez bankası
 
