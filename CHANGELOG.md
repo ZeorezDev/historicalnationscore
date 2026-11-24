@@ -1,5 +1,13 @@
 # Sürüm geçmişi
 
+## 8.0.0 · Political Management GUI Update
+
+- `/hnc` yönetim paneli, oyuncu istatistikleri, belediye sakinleri, üye kasabalar ve ulusal ekonomi ekranları eklendi.
+- `/t`, `/n`, `/town` ve `/nation` bilgi ve liste komutları, uyumlu oyunculara sunucudan güncel bir sayfa gönderir.
+- Rehberler ad, nüfus ve doğrulanmış chunk sayısına göre iki yönlü sıralanabilir. Devletler ayrıca kasaba sayısı ve güncel kurla TRY cinsinden toplam hazine değerine göre karşılaştırılır.
+- Yönetim işlemleri mevcut sunucu komutlarını ve yetki kontrollerini kullanır. Dağıtma, görev devri ve üyelik sonlandırma için onay ekranı eklendi.
+- Türkçe ve İngilizce arayüz metinleri, dönem temalı simgeler, arama ve sayfalama eklendi. Dünya kayıt biçimi korundu.
+
 ## 7.0.0 · Gold-Based Settlement Update
 
 - Şehir kurma, devlet kurma ve şehir chunk claim işlemleri için doğrudan vanilla Minecraft Altın Külçesi (`minecraft:gold_ingot`) maliyeti eklendi. Mevcut ulusal para, para basımı, döviz, enflasyon, ticaret ve banka sistemleri bozulmadan korundu.

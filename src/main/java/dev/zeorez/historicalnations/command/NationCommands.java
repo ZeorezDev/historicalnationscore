@@ -1,6 +1,8 @@
 package dev.zeorez.historicalnations.command;
 
 import com.mojang.authlib.GameProfile;
+import dev.zeorez.historicalnations.gui.PanelNetwork;
+import dev.zeorez.historicalnations.gui.PanelQuery.View;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -32,6 +34,8 @@ public final class NationCommands {
     private NationCommands() {}
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(literal("hnc").executes(run(c ->
+                PanelNetwork.open(c.player, View.HOME, null) ? null : msg("panel_help"))));
         var town = literal("town");
         town.then(named("create", (c, name) -> msg("town_created", c.land().createTown(c.player, name).name())));
         town.then(literal("invite").then(argument("player", GameProfileArgument.gameProfile()).executes(run(c -> {
@@ -47,8 +51,8 @@ public final class NationCommands {
             return msg("town_left");
         })));
         town.then(named("info", (c, name) -> c.townInfo(c.data.namedTown(name)))
-                .executes(run(c -> c.townInfo(c.data.home(c.id())))));
-        town.then(literal("list").executes(run(c -> msg("towns", names(c.data.towns().stream().map(Town::name).toList())))));
+                .executes(run(c -> PanelNetwork.open(c.player, View.TOWN, null) ? null : c.townInfo(c.data.home(c.id())))));
+        town.then(literal("list").executes(run(c -> PanelNetwork.open(c.player, View.TOWNS, null) ? null : msg("towns", names(c.data.towns().stream().map(Town::name).toList())))));
         town.then(literal("members").executes(run(c -> msg("members", names(c.data.members(c.data.home(c.id()).id())
                 .stream().map(c::playerName).toList())))));
         town.then(literal("setmayor").then(argument("player", GameProfileArgument.gameProfile()).executes(run(c -> {
@@ -114,8 +118,8 @@ public final class NationCommands {
             return msg("nation_left");
         })));
         nation.then(named("info", (c, name) -> c.nationInfo(c.data.namedNation(name)))
-                .executes(run(c -> c.nationInfo(c.data.country(c.id())))));
-        nation.then(literal("list").executes(run(c -> msg("nations", names(c.data.nations().stream().map(Nation::name).toList())))));
+                .executes(run(c -> PanelNetwork.open(c.player, View.NATION, null) ? null : c.nationInfo(c.data.country(c.id())))));
+        nation.then(literal("list").executes(run(c -> PanelNetwork.open(c.player, View.NATIONS, null) ? null : msg("nations", names(c.data.nations().stream().map(Nation::name).toList())))));
         nation.then(literal("towns").executes(run(c -> msg("towns", names(c.data.getNationTowns(c.data.country(c.id()).id())
                 .stream().map(Town::name).toList())))));
         nation.then(literal("disband").executes(run(c -> {
@@ -141,7 +145,7 @@ public final class NationCommands {
             var context = new Context(command, player, WorldRegistry.get(command.getSource().getServer()));
             try {
                 Component result = action.execute(context);
-                command.getSource().sendSuccess(() -> result, false);
+                if (result != null) command.getSource().sendSuccess(() -> result, false);
                 return Command.SINGLE_SUCCESS;
             } catch (RuleViolation error) {
                 throw new SimpleCommandExceptionType(msg(error.getMessage())).create();
@@ -178,6 +182,19 @@ public final class NationCommands {
         }
 
         GameProfile target() throws CommandSyntaxException {
+            // The residents screen identifies an offline member by the UUID stored in the town registry.
+            var nodes = command.getNodes();
+            String input = nodes.get(nodes.size() - 1).getRange().get(command.getInput());
+            if (input.length() == 36) {
+                try {
+                    UUID id = UUID.fromString(input);
+                    var cached = server().getProfileCache().get(id);
+                    if (cached.isPresent()) return cached.get();
+                    if (data.getPlayerTown(id).isPresent()) return new GameProfile(id, id.toString());
+                } catch (IllegalArgumentException ignored) {
+                    // Let Brigadier handle names and selectors as usual.
+                }
+            }
             Collection<GameProfile> profiles = GameProfileArgument.getGameProfiles(command, "player");
             if (profiles.size() != 1) throw new SimpleCommandExceptionType(msg("single_player")).create();
             return profiles.iterator().next();
@@ -200,6 +217,7 @@ public final class NationCommands {
             return msg(accept ? "nation_joined" : "declined", nation.name());
         }
         Component townInfo(Town town) {
+            if (PanelNetwork.open(player, View.TOWN, town.id())) return null;
             Component nation = data.getTownNation(town.id()).map(n -> Component.literal(n.name()))
                     .orElseGet(() -> Component.translatable("historical_nations.independent"));
             UUID deputy = data.deputy(town.id());
@@ -207,6 +225,7 @@ public final class NationCommands {
                     deputy == null ? msg("none") : Component.literal(playerName(deputy)), data.description(town.id()));
         }
         Component nationInfo(Nation nation) {
+            if (PanelNetwork.open(player, View.NATION, nation.id())) return null;
             Town capital = data.getTownById(nation.capitalTown()).orElseThrow();
             return msg("nation_info", nation.name(), capital.name(), playerName(capital.mayor()), data.getNationTowns(nation.id()).size());
         }

@@ -39,6 +39,7 @@ public final class NetworkClientTest {
         }
         var connection = minecraft.getConnection();
         if (connection == null || minecraft.player == null) return;
+        if (Boolean.getBoolean("hn.test.panel")) return;
         if (ACTOR.equals("HnNetA") && !created && connection.getPlayerInfo("HnNetB") != null) {
             created = true;
             pending = "town create Bursa";

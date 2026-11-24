@@ -15,6 +15,12 @@ import java.util.regex.Pattern;
 public final class WorldRegistry extends SavedData implements HistoricalNationsApi {
     public final dev.zeorez.historicalnations.property.PropertyBook properties =
             new dev.zeorez.historicalnations.property.PropertyBook(this);
+    PoliticalPanel.Counts directoryCounts;
+    @Override
+    public void setDirty() {
+        directoryCounts = null;
+        super.setDirty();
+    }
     final Ledger ledger = new Ledger(this);
     final TradeBook trade = new TradeBook(this);
     static final String FILE = "historical_nations";
