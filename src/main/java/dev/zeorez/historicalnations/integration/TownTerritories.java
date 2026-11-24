@@ -5,6 +5,7 @@ import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import com.mojang.logging.LogUtils;
 import dev.zeorez.historicalnations.TerritoryConfig;
 import dev.zeorez.historicalnations.api.Town;
+import dev.zeorez.historicalnations.core.GoldCosts;
 import dev.zeorez.historicalnations.core.Territory;
 import dev.zeorez.historicalnations.core.Territory.Location;
 import dev.zeorez.historicalnations.core.WorldRegistry;
@@ -81,12 +82,64 @@ public final class TownTerritories {
         return town;
     }
 
+    public Town createTown(ServerPlayer player, String name) throws CommandSyntaxException {
+        String clean = data.checkCreateTown(player.getUUID(), name);
+        Location pos = location(player);
+        if (verified(pos) != null || claims.get(pos.dimension(), pos.x(), pos.z()) != null) throw error("land_occupied");
+        if (TerritoryConfig.LIMIT.get() < 1) throw error("land_limit");
+
+        int cost = GoldCosts.townCreationCost();
+        if (cost > 0 && !GoldCosts.hasGold(player, cost)) {
+            throw GoldCosts.insufficientGold(cost, GoldCosts.countGold(player));
+        }
+
+        UUID townId = UUID.randomUUID();
+        int subIndex = claimInOpac(player, townId, pos);
+        var link = new Territory(townId, player.getUUID(), subIndex, 0);
+        if (!matches(link, claims.get(pos.dimension(), pos.x(), pos.z()))) throw error("land_changed");
+
+        if (cost > 0 && !GoldCosts.takeGold(player, cost)) {
+            rollbackOpacClaim(player, pos);
+            throw GoldCosts.insufficientGold(cost, GoldCosts.countGold(player));
+        }
+        try {
+            return data.createTownWithTerritory(townId, player.getUUID(), clean, pos, link);
+        } catch (RuntimeException ex) {
+            if (cost > 0) GoldCosts.giveGold(player, cost);
+            rollbackOpacClaim(player, pos);
+            throw ex;
+        }
+    }
+
     public void claim(ServerPlayer player) throws CommandSyntaxException {
         Town town = mayor(player);
         Location pos = location(player);
         if (verified(pos) != null || claims.get(pos.dimension(), pos.x(), pos.z()) != null) throw error("land_occupied");
         if (count(town.id()) >= TerritoryConfig.LIMIT.get()) throw error("land_limit");
 
+        int cost = GoldCosts.claimCost();
+        if (cost > 0 && !GoldCosts.hasGold(player, cost)) {
+            throw GoldCosts.insufficientGold(cost, GoldCosts.countGold(player));
+        }
+
+        int subIndex = claimInOpac(player, town.id(), pos);
+        var link = new Territory(town.id(), player.getUUID(), subIndex, cost);
+        if (!matches(link, claims.get(pos.dimension(), pos.x(), pos.z()))) throw error("land_changed");
+
+        if (cost > 0 && !GoldCosts.takeGold(player, cost)) {
+            rollbackOpacClaim(player, pos);
+            throw GoldCosts.insufficientGold(cost, GoldCosts.countGold(player));
+        }
+        try {
+            data.link(pos, link);
+        } catch (RuntimeException ex) {
+            if (cost > 0) GoldCosts.giveGold(player, cost);
+            rollbackOpacClaim(player, pos);
+            throw ex;
+        }
+    }
+
+    private int claimInOpac(ServerPlayer player, UUID townId, Location pos) throws CommandSyntaxException {
         // The public tryToClaim overload does not run this online-player permission check.
         // Use exactly the same check as OPAC 0.33.0's regular player claim command.
         var opac = ServerData.from(server);
@@ -100,7 +153,7 @@ public final class TownTerritories {
         if (claims.getPlayerInfo(player.getUUID()).getClaimCount() >= claims.getPlayerFullClaimLimit(player)) {
             throw new SimpleCommandExceptionType(ClaimResult.Type.CLAIM_LIMIT_REACHED.message).create();
         }
-        String name = profileName(town.id());
+        String name = profileName(townId);
         var profile = owner.getSubConfig(name);
         if (profile == null) {
             if (owner.getSubCount() >= owner.getSubConfigLimit()
@@ -113,15 +166,23 @@ public final class TownTerritories {
                 pos.dimension(), pos.x(), pos.z(), pos.x(), pos.z(), false);
         if (result.getResultType() != ClaimResult.Type.SUCCESSFUL_CLAIM)
             throw new SimpleCommandExceptionType(result.getMessage()).create();
-        var link = new Territory(town.id(), player.getUUID(), profile.getSubIndex());
-        if (!matches(link, claims.get(pos.dimension(), pos.x(), pos.z()))) throw error("land_changed");
-        data.link(pos, link);
+        return profile.getSubIndex();
+    }
+
+    private void rollbackOpacClaim(ServerPlayer player, Location pos) {
+        claims.tryToUnclaim(pos.dimension(), player.getUUID(), pos.dimension(),
+                pos.x(), pos.z(), pos.x(), pos.z(), false);
     }
 
     public void unclaim(ServerPlayer player) throws CommandSyntaxException {
         Town town = mayor(player);
         Location pos = location(player);
+        Territory link = verified(pos);
+        if (link == null || !town.id().equals(link.town()) || !player.getUUID().equals(link.owner()))
+            throw error("land_not_yours");
         if (!release(player, town, pos)) throw error("land_not_yours");
+        int refund = GoldCosts.unclaimRefund(link.paidGold());
+        if (refund > 0) GoldCosts.giveGold(player, refund);
     }
 
     private boolean release(ServerPlayer player, Town town, Location pos) throws CommandSyntaxException {

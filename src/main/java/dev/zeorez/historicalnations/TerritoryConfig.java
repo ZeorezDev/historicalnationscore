@@ -20,6 +20,41 @@ public final class TerritoryConfig {
     public static final ForgeConfigSpec.IntValue FX_LIMIT = BUILDER.defineInRange("dailyFxLimitBps", 300, 0, 2000);
     public static final ForgeConfigSpec.IntValue ACTIVITY = BUILDER.defineInRange("economicActivityBaseline", 1000, 1, Integer.MAX_VALUE);
     public static final ForgeConfigSpec.BooleanValue INDEX_FEES = BUILDER.define("indexTaxesAndUpkeep", false);
+    public static final ForgeConfigSpec.BooleanValue ENABLE_GOLD_COSTS;
+    public static final ForgeConfigSpec.IntValue TOWN_CREATION_GOLD_COST;
+    public static final ForgeConfigSpec.IntValue NATION_CREATION_GOLD_COST;
+    public static final ForgeConfigSpec.IntValue CLAIM_GOLD_COST;
+    public static final ForgeConfigSpec.BooleanValue REFUND_ON_UNCLAIM;
+
+    static {
+        BUILDER.push("economy");
+        ENABLE_GOLD_COSTS = BUILDER
+                .comment("Require vanilla Gold Ingots for town creation, nation creation, and town chunk claims.")
+                .define("enableGoldCosts", true);
+        BUILDER.pop();
+
+        BUILDER.push("town");
+        TOWN_CREATION_GOLD_COST = BUILDER
+                .comment("Vanilla Gold Ingots required to found a town (includes the free initial town chunk).")
+                .defineInRange("creationGoldCost", 2, 0, Integer.MAX_VALUE);
+        BUILDER.pop();
+
+        BUILDER.push("nation");
+        NATION_CREATION_GOLD_COST = BUILDER
+                .comment("Vanilla Gold Ingots required to found a nation.")
+                .defineInRange("creationGoldCost", 128, 0, Integer.MAX_VALUE);
+        BUILDER.pop();
+
+        BUILDER.push("claims");
+        CLAIM_GOLD_COST = BUILDER
+                .comment("Flat vanilla Gold Ingots required for each additional town chunk claim.")
+                .defineInRange("claimGoldCost", 1, 0, Integer.MAX_VALUE);
+        REFUND_ON_UNCLAIM = BUILDER
+                .comment("Whether unclaiming a paid town chunk refunds Gold Ingots.")
+                .define("refundOnUnclaim", false);
+        BUILDER.pop();
+    }
+
     public static final ForgeConfigSpec SPEC = BUILDER.build();
 
     private TerritoryConfig() {}

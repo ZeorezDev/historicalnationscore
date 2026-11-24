@@ -1,4 +1,4 @@
-# Historical Nations Core · v0.6.0
+# Historical Nations Core · v7.0.0
 
 <img src="src/main/resources/historical_nations_logo.png" alt="Historical Nations Core amblemi" width="320">
 
@@ -16,7 +16,7 @@ Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehi
 ## Kurulum ve derleme
 
 1. JDK 17 ile `JAVA_HOME` ayarlayın. Depo kökünde Windows için `.\gradlew.bat build`, Linux veya macOS için `./gradlew build` çalıştırın.
-2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-0.6.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
+2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-7.0.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
 3. Sunucuyu açın. Oyunda `/town list` ve `/town claimstatus` komutlarıyla kurulumu deneyin. Sohbet metinleri istemcinin dil ayarını izler.
 
 [Forge 1.20.1 indirmeleri](https://files.minecraftforge.net/net/minecraftforge/forge/index_1.20.1.html) · [Resmî OPAC 0.33.0 paketleri](https://chocolateminecraft.com/maven/xaero/pac/open-parties-and-claims-forge-1.20.1/0.33.0/)
@@ -27,7 +27,7 @@ Komutlar bir oyuncu adına çalışır. Şehir ve devlet adları 1–32 karakter
 
 | Şehir komutu | Etki |
 | --- | --- |
-| `/town create <ad>` | Bağımsız bir şehir kurar ve kurucusunu belediye başkanı yapar. |
+| `/town create <ad>` | Varsayılan 2 Altın Külçesi karşılığında bağımsız bir şehir kurar, ilk chunk'ı ücretsiz sahiplenir ve kurucusunu belediye başkanı yapar. |
 | `/town invite <oyuncu>` | Belediye başkanı veya yardımcısı bağımsız bir oyuncuyu davet eder. |
 | `/town accept <ad>`, `/town deny <ad>` | Oyuncu ilgili şehrin davetini kabul eder veya reddeder. |
 | `/town leave` | Vatandaş şehirden ayrılır. Belediye başkanının önce görevi devretmesi gerekir. |
@@ -35,14 +35,14 @@ Komutlar bir oyuncu adına çalışır. Şehir ve devlet adları 1–32 karakter
 | `/town setmayor <oyuncu>` | Belediye başkanlığını aynı şehrin başka bir vatandaşına devreder. |
 | `/town disband` | Belediye başkanı şehri dağıtır. Başkent için önce devlet dağıtılır. |
 | `/town claimstatus` | Bulunulan boyutu, chunk koordinatlarını, OPAC sahiplik durumunu ve sahibin şehir üyeliğini gösterir. |
-| `/town claim` | Belediye başkanı bulunduğu boş chunk'ı şehir arazisi olarak sahiplenir. |
+| `/town claim` | Belediye başkanı bulunduğu boş chunk'ı sabit 1 Altın Külçesi karşılığında şehir arazisi olarak sahiplenir. |
 | `/town unclaim` | Belediye başkanı bulunduğu şehir chunk'ını bırakır. |
 | `/town claims` | Kendi şehrinizin tüm boyutlardaki doğrulanmış chunk sayısını gösterir. |
 | `/town claiminfo` | Bulunduğunuz chunk'ın doğrulanmış şehir adını gösterir. Kişisel claim'lerde şehir alanı boştur. |
 
 | Devlet komutu | Etki |
 | --- | --- |
-| `/nation create <ad>` | Bağımsız bir şehrin başkanı devlet kurar. Kurucu şehir başkent olur. |
+| `/nation create <ad>` | Bağımsız bir şehrin başkanı varsayılan 128 Altın Külçesi (2 stack) karşılığında devlet kurar. Kurucu şehir başkent olur. |
 | `/nation invite <şehir>` | Devlet lideri bağımsız bir şehri davet eder. |
 | `/nation accept <ad>`, `/nation deny <ad>` | Davet edilen şehrin belediye başkanı karar verir. |
 | `/nation leave` | Başkent dışındaki bir üye şehrin başkanı şehrini devletten ayırır. |

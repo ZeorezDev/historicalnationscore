@@ -127,13 +127,31 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
 
     public String officialTownCurrency(UUID town) { return ledger.market.official(townNations.get(town)); }
 
-    public Town createTown(UUID actor, String name) {
+    public String checkCreateTown(UUID actor, String name) {
         require(!playerTowns.containsKey(actor), "already_citizen");
         String clean = cleanName(name);
         require(findTown(clean).isEmpty(), "name_taken");
+        return clean;
+    }
+
+    public Town createTown(UUID actor, String name) {
+        String clean = checkCreateTown(actor, name);
         Town town = new Town(UUID.randomUUID(), clean, actor);
         towns.put(town.id(), town);
         joinTown(actor, town);
+        return town;
+    }
+
+    public Town createTownWithTerritory(UUID townId, UUID actor, String name, Territory.Location location, Territory territory) {
+        String clean = checkCreateTown(actor, name);
+        require(!towns.containsKey(townId), "name_taken");
+        require(!territories.containsKey(location), "land_occupied");
+        Town town = new Town(townId, clean, actor);
+        towns.put(town.id(), town);
+        joinTown(actor, town);
+        territories.put(location, territory);
+        properties.add(location);
+        setDirty();
         return town;
     }
     private void joinTown(UUID player, Town town) {
@@ -226,12 +244,18 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
         setDirty();
     }
 
-    public Nation createNation(UUID actor, String name) {
+    public String checkCreateNation(UUID actor, String name) {
         Town town = mayorTown(actor);
         require(!townNations.containsKey(town.id()), "already_in_nation");
         String clean = cleanName(name);
         require(findNation(clean).isEmpty(), "name_taken");
         ledger.available();
+        return clean;
+    }
+
+    public Nation createNation(UUID actor, String name) {
+        String clean = checkCreateNation(actor, name);
+        Town town = mayorTown(actor);
         Nation nation = new Nation(UUID.randomUUID(), clean, town.id());
         nations.put(nation.id(), nation);
         ledger.market.bank(nation.id());

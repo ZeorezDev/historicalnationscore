@@ -5,6 +5,10 @@ import net.minecraft.resources.ResourceLocation;
 import java.util.UUID;
 
 /** A link to an OPAC sub-claim. OPAC remains authoritative for the claim itself. */
-public record Territory(UUID town, UUID owner, int subIndex) {
+public record Territory(UUID town, UUID owner, int subIndex, int paidGold) {
+    public Territory(UUID town, UUID owner, int subIndex) {
+        this(town, owner, subIndex, 0);
+    }
+
     public record Location(ResourceLocation dimension, int x, int z) {}
 }

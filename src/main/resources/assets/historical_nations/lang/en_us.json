@@ -51,6 +51,7 @@
   "historical_nations.no_offer": "This parcel is not offered for allocation.",
   "historical_nations.bad_amount": "Use a positive amount and different accounts.",
   "historical_nations.insufficient_funds": "Insufficient funds.",
+  "historical_nations.insufficient_gold": "You need %1$s Gold Ingots for this action (you have %2$s).",
   "historical_nations.balance_limit": "The recipient's balance would overflow.",
   "historical_nations.balance": "Balance %s",
   "historical_nations.account": "%1$s | Balance %2$s",

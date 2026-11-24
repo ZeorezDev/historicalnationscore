@@ -10,6 +10,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import dev.zeorez.historicalnations.api.Nation;
 import dev.zeorez.historicalnations.api.Town;
+import dev.zeorez.historicalnations.core.GoldCosts;
 import dev.zeorez.historicalnations.core.RuleViolation;
 import dev.zeorez.historicalnations.core.WorldRegistry;
 import dev.zeorez.historicalnations.integration.OpenPacClaims;
@@ -32,7 +33,7 @@ public final class NationCommands {
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         var town = literal("town");
-        town.then(named("create", (c, name) -> msg("town_created", c.data.createTown(c.id(), name).name())));
+        town.then(named("create", (c, name) -> msg("town_created", c.land().createTown(c.player, name).name())));
         town.then(literal("invite").then(argument("player", GameProfileArgument.gameProfile()).executes(run(c -> {
             GameProfile target = c.target();
             Town home = c.data.invitePlayer(c.id(), target.getId());
@@ -99,7 +100,7 @@ public final class NationCommands {
         dispatcher.register(town);
 
         var nation = literal("nation");
-        nation.then(named("create", (c, name) -> msg("nation_created", c.data.createNation(c.id(), name).name())));
+        nation.then(named("create", (c, name) -> msg("nation_created", c.createNation(name).name())));
         nation.then(named("invite", (c, name) -> {
             Town target = c.data.namedTown(name);
             Nation country = c.data.inviteTown(c.id(), target);
@@ -128,7 +129,7 @@ public final class NationCommands {
         Component execute(Context context) throws CommandSyntaxException;
     }
     private interface NamedAction {
-        Component execute(Context context, String name);
+        Component execute(Context context, String name) throws CommandSyntaxException;
     }
     private static LiteralArgumentBuilder<CommandSourceStack> named(String verb, NamedAction action) {
         return literal(verb).then(argument("name", StringArgumentType.greedyString()).executes(
@@ -158,6 +159,23 @@ public final class NationCommands {
         UUID id() { return player.getUUID(); }
         MinecraftServer server() { return command.getSource().getServer(); }
         TownTerritories land() { return new TownTerritories(server()); }
+
+        Nation createNation(String name) throws CommandSyntaxException {
+            data.checkCreateNation(id(), name);
+            int cost = GoldCosts.nationCreationCost();
+            if (cost > 0 && !GoldCosts.hasGold(player, cost)) {
+                throw GoldCosts.insufficientGold(cost, GoldCosts.countGold(player));
+            }
+            if (cost > 0 && !GoldCosts.takeGold(player, cost)) {
+                throw GoldCosts.insufficientGold(cost, GoldCosts.countGold(player));
+            }
+            try {
+                return data.createNation(id(), name);
+            } catch (RuntimeException ex) {
+                if (cost > 0) GoldCosts.giveGold(player, cost);
+                throw ex;
+            }
+        }
 
         GameProfile target() throws CommandSyntaxException {
             Collection<GameProfile> profiles = GameProfileArgument.getGameProfiles(command, "player");

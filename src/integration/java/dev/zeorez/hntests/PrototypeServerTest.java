@@ -127,6 +127,9 @@ public final class PrototypeServerTest {
                 case "tradeRestart" -> new TradeTest(suite).restart();
                 case "economySetup" -> new EconomyTest(suite).setup();
                 case "economyVerify" -> new EconomyTest(suite).verify();
+                case "goldSetup" -> new GoldSettlementTest(suite).setup();
+                case "goldVerify" -> new GoldSettlementTest(suite).verify();
+                case "goldUpgrade" -> new GoldSettlementTest(suite).upgradeFromV6();
                 default -> throw new IllegalArgumentException("Unknown test phase " + phase);
             }
             LogUtils.getLogger().info("HN INTEGRATION PASS {}", phase);

@@ -51,6 +51,7 @@
   "historical_nations.no_offer": "Bu parsel tahsise açık değil.",
   "historical_nations.bad_amount": "Tutar pozitif olmalı ve gönderen ile alıcı farklı olmalı.",
   "historical_nations.insufficient_funds": "Hesapta yeterli para yok.",
+  "historical_nations.insufficient_gold": "Bu işlem için %1$s Altın Külçesi gerekli (envanterinizde %2$s var).",
   "historical_nations.balance_limit": "Alıcı hesabının bakiye sınırı aşılır.",
   "historical_nations.balance": "Bakiye %s",
   "historical_nations.account": "%1$s | Bakiye %2$s",

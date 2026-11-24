@@ -43,6 +43,7 @@ final class RegistryStorage {
             row.putInt("X", location.x());
             row.putInt("Z", location.z());
             row.putInt("SubIndex", territory.subIndex());
+            if (territory.paidGold() > 0) row.putInt("PaidGold", territory.paidGold());
             territories.add(row);
         });
         root.put("Territories", territories);
@@ -152,7 +153,8 @@ final class RegistryStorage {
                     || row.getInt("SubIndex") < 0) continue;
             Town town = registry.towns.get(row.getUUID("From"));
             if (town != null && town.mayor().equals(row.getUUID("To"))) {
-                registry.territories.put(location, new Territory(town.id(), town.mayor(), row.getInt("SubIndex")));
+                int paidGold = Math.max(0, row.getInt("PaidGold"));
+                registry.territories.put(location, new Territory(town.id(), town.mayor(), row.getInt("SubIndex"), paidGold));
             }
         }
         registry.properties.load(root);

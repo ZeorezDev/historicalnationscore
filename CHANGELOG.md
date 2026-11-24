@@ -1,5 +1,13 @@
 # Sürüm geçmişi
 
+## 7.0.0 · Gold-Based Settlement Update
+
+- Şehir kurma, devlet kurma ve şehir chunk claim işlemleri için doğrudan vanilla Minecraft Altın Külçesi (`minecraft:gold_ingot`) maliyeti eklendi. Mevcut ulusal para, para basımı, döviz, enflasyon, ticaret ve banka sistemleri bozulmadan korundu.
+- `/town create <ad>` varsayılan olarak envanterden **2 Altın Külçesi** tahsil eder ve oyuncunun bulunduğu ilk şehir chunk'ını OPAC üzerinden ücretsiz olarak sahiplenir. Kuruluş veya ilk claim başarısız olursa altın alınmaz.
+- `/town claim` şehir büyüklüğünden ve devlet üyeliğinden bağımsız olarak sabit **1 Altın Külçesi** bedel alır. Aynı chunk iki kez ücretlendirilmez, başarısız işlemlerde altın kaybolmaz ve varsayılan olarak `/town unclaim` altın iadesi yapmaz.
+- `/nation create <ad>` varsayılan olarak envanterden **128 Altın Külçesi (2 stack)** tahsil eder; başka bir devletin varlığına ihtiyaç duymadan ilk devlet sıfırdan kurulabilir.
+- Sunucu ayarlarına (`serverconfig/historical_nations-server.toml`) `[economy] enableGoldCosts`, `[town] creationGoldCost`, `[nation] creationGoldCost`, `[claims] claimGoldCost` ve `[claims] refundOnUnclaim` seçenekleri eklendi. Önceden kurulmuş şehir, devlet ve claim kayıtlarına geriye dönük ücret uygulanmaz.
+
 ## 0.6.0 · Uluslararası ticaret ve gümrük
 
 - Devlet vatandaşları ana ellerindeki eşyayı belirli bir oyuncuya mevcut para birimleriyle satabilir. Alıcı, gümrük dahil toplamı kabulden önce görür.
