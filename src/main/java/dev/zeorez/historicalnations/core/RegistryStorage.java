@@ -3,6 +3,7 @@ package dev.zeorez.historicalnations.core;
 import com.mojang.logging.LogUtils;
 import dev.zeorez.historicalnations.api.Nation;
 import dev.zeorez.historicalnations.api.Town;
+import dev.zeorez.historicalnations.map.NationPalette;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -28,8 +29,10 @@ final class RegistryStorage {
         for (Nation nation : registry.nations.values()) {
             CompoundTag row = identity(nation.id(), nation.name());
             row.putUUID("Capital", nation.capitalTown());
+            row.putInt("Color", registry.nationColor(nation.id()));
             nations.add(row);
         }
+        root.putUUID("MapId", registry.mapId);
         root.put("Towns", towns);
         root.put("Nations", nations);
         root.put("Citizens", links(registry.playerTowns));
@@ -78,6 +81,12 @@ final class RegistryStorage {
 
     static WorldRegistry load(CompoundTag root) {
         WorldRegistry registry = new WorldRegistry();
+        boolean missingMapMetadata = false;
+        if (root.hasUUID("MapId")) {
+            registry.mapId = root.getUUID("MapId");
+        } else {
+            missingMapMetadata = true;
+        }
         // Reserve mayors and capitals before accepting ordinary memberships.
         for (Tag entry : root.getList("Towns", Tag.TAG_COMPOUND)) {
             CompoundTag row = (CompoundTag) entry;
@@ -110,6 +119,12 @@ final class RegistryStorage {
             }
             registry.nations.put(nation.id(), nation);
             registry.townNations.put(nation.capitalTown(), nation.id());
+            if (row.contains("Color", Tag.TAG_INT)) {
+                registry.nationColors.put(nation.id(), row.getInt("Color") & 0xFFFFFF);
+            } else {
+                registry.nationColors.put(nation.id(), NationPalette.pickDistinct(registry.nationColors.values(), nation.id()));
+                missingMapMetadata = true;
+            }
         }
         readLinks(root, "Citizens", (player, town) -> {
             if (registry.towns.containsKey(town)) registry.playerTowns.putIfAbsent(player, town);
@@ -160,7 +175,7 @@ final class RegistryStorage {
         registry.properties.load(root);
         registry.ledger.load(root);
         registry.trade.load(root);
-        if (!root.contains("Plots") && !registry.territories.isEmpty()) registry.setDirty();
+        if (missingMapMetadata || (!root.contains("Plots") && !registry.territories.isEmpty())) registry.setDirty();
         return registry;
     }
 

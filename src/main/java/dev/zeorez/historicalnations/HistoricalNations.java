@@ -16,12 +16,19 @@ public final class HistoricalNations {
 
     public HistoricalNations() {
         dev.zeorez.historicalnations.gui.PanelNetwork.register();
+        dev.zeorez.historicalnations.map.MapNetwork.register();
+        net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(
+                net.minecraftforge.api.distmarker.Dist.CLIENT,
+                () -> dev.zeorez.historicalnations.client.MapClientInit::initClientNetwork);
         ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, TerritoryConfig.SPEC);
         MinecraftForge.EVENT_BUS.register(dev.zeorez.historicalnations.property.QuarterCommands.class);
         MinecraftForge.EVENT_BUS.register(dev.zeorez.historicalnations.property.ParcelProtection.class);
         MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.core.DailyFinance::tick);
         MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.core.TradeCommands::tick);
         MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.core.DailyFinance::login);
+        MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.map.PoliticalMapServer::tick);
+        MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.map.PoliticalMapServer::onPlayerLogout);
+        MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.map.PoliticalMapServer::onServerStopped);
         MinecraftForge.EVENT_BUS.addListener(TerritoryHooks::register);
         MinecraftForge.EVENT_BUS.addListener(this::serverStarted);
         MinecraftForge.EVENT_BUS.addListener(this::registerCommands);

@@ -39,7 +39,7 @@ public final class NetworkClientTest {
         }
         var connection = minecraft.getConnection();
         if (connection == null || minecraft.player == null) return;
-        if (Boolean.getBoolean("hn.test.panel")) return;
+        if (Boolean.getBoolean("hn.test.panel") || Boolean.getBoolean("hn.test.map")) return;
         if (ACTOR.equals("HnNetA") && !created && connection.getPlayerInfo("HnNetB") != null) {
             created = true;
             pending = "town create Bursa";
@@ -52,6 +52,7 @@ public final class NetworkClientTest {
 
     @SubscribeEvent
     public static void message(ClientChatReceivedEvent.System event) {
+        if (Boolean.getBoolean("hn.test.map")) return;
         if (ACTOR.equals("HnNetB") && event.getMessage().getString().startsWith("HN_TEST_TRADE ")) {
             var ids = event.getMessage().getString().split(" ");
             var connection = Minecraft.getInstance().getConnection();

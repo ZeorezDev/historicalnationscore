@@ -35,6 +35,8 @@ public final class PrototypeServerTest {
     private boolean ran;
     private boolean panelStarted, panelObserved;
     private final java.util.Set<UUID> panelAcks = new java.util.HashSet<>();
+    private int mapNetStage;
+    private final java.util.Set<UUID> mapAcks = new java.util.HashSet<>();
     private boolean saleOffered;
     private int saleTick;
     private String competingTrade;
@@ -43,6 +45,14 @@ public final class PrototypeServerTest {
         MinecraftForge.EVENT_BUS.addListener(this::tick);
         if ("panelNetwork".equals(System.getProperty("hn.test.phase")))
             MinecraftForge.EVENT_BUS.addListener(this::registerPanelAck);
+        if ("mapNetwork".equals(System.getProperty("hn.test.phase")))
+            MinecraftForge.EVENT_BUS.addListener(this::registerMapAck);
+    }
+    private void registerMapAck(net.minecraftforge.event.RegisterCommandsEvent event) {
+        event.getDispatcher().register(net.minecraft.commands.Commands.literal("hnmapack").executes(c -> {
+            mapAcks.add(c.getSource().getPlayerOrException().getUUID());
+            return 1;
+        }));
     }
     private void registerPanelAck(net.minecraftforge.event.RegisterCommandsEvent event) {
         event.getDispatcher().register(net.minecraft.commands.Commands.literal("hnpanelack").executes(c -> {
@@ -54,6 +64,66 @@ public final class PrototypeServerTest {
         String phase = System.getProperty("hn.test.phase", "");
         MinecraftServer server = event.getServer();
         if (ran || phase.isEmpty() || event.phase != TickEvent.Phase.END || server.getTickCount() < 40) return;
+        if (phase.equals("mapNetwork")) {
+            try {
+                if (server.getTickCount() > 9600) throw new AssertionError("mapNetwork timeout");
+                var a = server.getPlayerList().getPlayerByName("HnNetA");
+                var b = server.getPlayerList().getPlayerByName("HnNetB");
+                if (a == null || b == null) return;
+                var suite = new Suite(server);
+                if (mapNetStage == 0) {
+                    double groundY = a.getY();
+                    a.teleportTo(server.overworld(), 8, groundY, 8, 0, 0); // chunk (0, 0)
+                    dev.zeorez.historicalnations.core.GoldCosts.giveGold(a, 135);
+                    suite.command(a, "town create Belgrade", "town_created");
+                    suite.command(a, "nation create Kingdom of Yugoslavia", "nation_created");
+
+                    b.teleportTo(server.overworld(), 4 * 16 + 8, groundY, 8, 0, 0); // chunk (4, 0)
+                    dev.zeorez.historicalnations.core.GoldCosts.giveGold(b, 5);
+                    suite.command(b, "town create Kumanovo", "town_created");
+
+                    var c = suite.c;
+                    c.setPos(8, groundY, -16 + 8); // chunk (0, -1), directly adjacent to Belgrade (0, 0)
+                    dev.zeorez.historicalnations.core.GoldCosts.giveGold(c, 5);
+                    suite.command(c, "town create Novi Sad", "town_created");
+
+                    var d = suite.d;
+                    d.setPos(-4 * 16 + 8, groundY, 8); // chunk (-4, 0)
+                    dev.zeorez.historicalnations.core.GoldCosts.giveGold(d, 5);
+                    suite.command(d, "town create Dubrovnik", "town_created");
+
+                    suite.command(a, "nation invite Kumanovo", "invited");
+                    suite.command(b, "nation accept Kingdom of Yugoslavia", "nation_joined");
+                    suite.command(a, "nation invite Novi Sad", "invited");
+                    suite.command(c, "nation accept Kingdom of Yugoslavia", "nation_joined");
+
+                    a.sendSystemMessage(Component.literal("HN_MAP_CLIENT_A_START"));
+                    b.sendSystemMessage(Component.literal("HN_MAP_CLIENT_B_VERIFY"));
+                    mapNetStage = 1;
+                    return;
+                }
+                if (mapNetStage == 1) {
+                    if (!mapAcks.containsAll(java.util.List.of(a.getUUID(), b.getUUID()))) return;
+                    mapAcks.clear();
+                    // Trigger live claim + affiliation change while Client B's map is open!
+                    a.teleportTo(server.overworld(), 16 + 8, a.getY(), 8, 0, 0); // chunk (1, 0)
+                    suite.command(a, "town claim", "land_claimed");
+                    suite.command(b, "nation leave", "nation_left");
+                    b.sendSystemMessage(Component.literal("HN_MAP_DELTA_CHECK"));
+                    mapNetStage = 2;
+                    return;
+                }
+                if (mapNetStage == 2) {
+                    if (!mapAcks.contains(b.getUUID())) return;
+                    LogUtils.getLogger().info("HN INTEGRATION PASS mapNetwork");
+                }
+            } catch (Exception | AssertionError error) {
+                LogUtils.getLogger().error("HN INTEGRATION FAIL mapNetwork", error);
+            }
+            ran = true;
+            server.halt(false);
+            return;
+        }
         if (phase.equals("panelNetwork")) {
             try {
                 if (server.getTickCount()>7200) throw new AssertionError("GUI client timeout");
@@ -178,6 +248,8 @@ public final class PrototypeServerTest {
                 case "goldSetup" -> new GoldSettlementTest(suite).setup();
                 case "goldVerify" -> new GoldSettlementTest(suite).verify();
                 case "goldUpgrade" -> new GoldSettlementTest(suite).upgradeFromV6();
+                case "mapSetup" -> new WorldMapTest(suite).setup();
+                case "mapVerify" -> new WorldMapTest(suite).verify();
                 default -> throw new IllegalArgumentException("Unknown test phase " + phase);
             }
             LogUtils.getLogger().info("HN INTEGRATION PASS {}", phase);

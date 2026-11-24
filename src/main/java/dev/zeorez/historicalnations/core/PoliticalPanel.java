@@ -141,6 +141,7 @@ public final class PoliticalPanel {
                 field("supply",data.ledger.supply(m.code)+" "+m.code);
                 field("inflation",BigDecimal.valueOf(data.ledger.market.bank(id).inflation,2)+"%");
                 field("exchange","1 "+m.code+" = "+MonetaryPolicy.decimal(m.quote)+" "+REF);
+                field("map_color",dev.zeorez.historicalnations.map.NationPalette.formatHex(data.nationColor(id)));
             }
             default -> {}
         }

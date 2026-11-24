@@ -1,5 +1,15 @@
 # Sürüm geçmişi
 
+## 9.0.0 · Interactive Political World Map Update
+
+- Tam ekran etkileşimli **Political World Map** (`M` tuşu ve `/map` komutu) eklendi. 1930–1950 stratejik harita estetiğiyle 6 bağımsız katman (Terrain, Political, Nation Borders, Town Borders, Settlement Labels, Player Location) desteklenir.
+- Çok seviyeli (`z0`..`z7`, `1`..`128` blok/piksel) Anvil `.mca` arazi tile piramidi ve sunucu tick döngüsünden bağımsız arka plan/CLI harita hazırlama aracı (`AnvilTileGenerator` / `/map admin render`) eklendi. Harita açmak veya gezmek asla dünya chunk'larını zorla yüklemez; oyuncular ilk girişten itibaren tüm coğrafyayı inceleyebilir.
+- 1:500 MOTFE Dünya haritası (`73.728 × 36.864` blok, `-36864..36863` X, `-18432..18431` Z, `204.8` blok/derece equirectangular) için `calibration.json` ve `[earthMap]` kalibrasyon desteği eklendi.
+- Yalnızca OPAC üzerinden doğrulanmış gerçek şehir chunk'ları boyanır; sahipsiz ara bölgeler ve kişisel OPAC claim'leri siyasi sınırlara dahil edilmez. Aynı devlete bağlı bitişik kasabalar arasında devlet sınırı çizilmez, yalnızca ince belediye sınırı gösterilir.
+- Kalıcı devlet harita renkleri, `/nation color <#RRGGBB>`, `/nation setcapital <kasaba>`, `/town rename <ad>` ve `/nation rename <ad>` komutları ile sürüm numaralı sıkıştırılmış snapshot + canlı delta senkronizasyonu (`MapNetwork` / `PoliticalMapServer`) eklendi.
+- Claim edilmiş kasaba toprağına sağ tıklayınca açılan **Town Bilgi Kutucuğu** (`VIEW TOWN` ve tıklanabilir devlet başlığı), harita arama çubuğu (kasaba, devlet ve `X Z` koordinat arama) ve v8.0.0 yönetim ekranlarıyla çift yönlü `Haritada Göster` (`VIEW ON MAP`) entegrasyonu eklendi.
+- Sunucu kimliğine (`MapId`) göre yalıtılmış GPU (`DynamicTexture` LRU) ve disk tile önbelleği (`ClientTileCache`) ile `64×64` chunk uzamsal indeksleme (`ClientMapState`) eklendi.
+
 ## 8.0.0 · Political Management GUI Update
 
 - `/hnc` yönetim paneli, oyuncu istatistikleri, belediye sakinleri, üye kasabalar ve ulusal ekonomi ekranları eklendi.

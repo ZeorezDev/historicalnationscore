@@ -1,4 +1,4 @@
-# Historical Nations Core · v8.0.0
+# Historical Nations Core · v9.0.0
 
 <img src="src/main/resources/historical_nations_logo.png" alt="Historical Nations Core amblemi" width="320">
 
@@ -20,7 +20,7 @@ Belediye ve devlet bilgi ekranlarındaki Yönetim sekmesi, üyelik ve göreve uy
 ## Kurulum ve derleme
 
 1. JDK 17 ile `JAVA_HOME` ayarlayın. Depo kökünde Windows için `.\gradlew.bat build`, Linux veya macOS için `./gradlew build` çalıştırın.
-2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-8.0.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
+2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-9.0.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
 3. Sunucuyu açın. Oyunda `/town list` ve `/town claimstatus` komutlarıyla kurulumu deneyin. Sohbet metinleri istemcinin dil ayarını izler.
 
 [Forge 1.20.1 indirmeleri](https://files.minecraftforge.net/net/minecraftforge/forge/index_1.20.1.html) · [Resmî OPAC 0.33.0 paketleri](https://chocolateminecraft.com/maven/xaero/pac/open-parties-and-claims-forge-1.20.1/0.33.0/)
@@ -188,6 +188,31 @@ API ayrıca `getTownById`, `getNationById`, `isTownMayor`, `getNationTowns` ve `
 **Kayıt ve kurtarma.** Her ilişki boyut, chunk X/Z, şehir UUID'si, sahip UUID'si ve OPAC alt profil indeksini taşır. Başlangıçta ve kullanım sırasında canlı OPAC kaydı ile profil karşılaştırılır. OPAC üzerinden kaldırılan veya sahipliği değişen claim'in şehir bağı temizlenir. Kesinti sonrası yalnızca OPAC'de kalan claim kişisel kalır. Yalnızca HNC'de kalan bağlantı kaldırılır. Yedekten geri yüklerken tüm dünya klasörünü aynı tarihten alın.
 
 Gradle, Mojang mappings için OPAC'nin resmî `:dev` paketini ve MixinGradle kullanır. Sunucuya normal OPAC paketi kurulur. [İncelenen 1.20 kaynak sürümü](https://github.com/thexaero/open-parties-and-claims/tree/fd12115e97af9642005742da9586939e9803a327) · [OPAC API belgeleri](https://thexaero.github.io/open-parties-and-claims/javadoc/) · [Forge SavedData](https://docs.minecraftforge.net/en/1.20.1/datastorage/saveddata/)
+
+## Siyasi Dünya Haritası (Political World Map · v9.0.0)
+
+Oyuncular oyun içinde **`M`** tuşuyla (Kontroller menüsünden değiştirilebilir) veya **`/map`** komutuyla tam ekran **Political World Map** arayüzünü açabilir:
+
+- **6 Görsel Katman:** Arazi (Terrain), Siyasi Renkler (Political), Kalın Devlet Sınırları (Nation Borders), İnce Kasaba Sınırları ve yakın görünümde `16×16` chunk ızgarası (Town Borders), Zoom uyarlamalı yerleşim/başkent etiketleri (Settlement Labels) ve Oyuncu Konumu (Player Location).
+- **Sağ Tık Kasaba Kartı ve v8.0.0 Entegrasyonu:** Doğrulanmış bir kasaba arazisine sağ tıklandığında devlet başlığı, belediye başkanı, nüfus, chunk sayısı ve durum bilgisi açılır. **`KASABAYI GÖR` (`VIEW TOWN`)** butonu mevcut v8.0.0 kasaba ekranını, üstteki devlet başlığı veya haritadaki devlet etiketi ise devlet ekranını açar. Kasaba ve Devlet ekranlarındaki **`Haritada Göster` (`VIEW ON MAP`)** butonları ile rehber satırlarındaki `⌖` simgesi haritada ilgili konuma odaklanır.
+- **Arama ve Siyasi Komutlar:** Harita üst çubuğundan kasaba adı, devlet adı (tüm eksklav bölgeleri vurgulanır) veya `7773 -8037` biçiminde Minecraft `X Z` koordinatı aranabilir. Liderler `/nation color <#RRGGBB>`, `/nation setcapital <kasaba>`, `/nation rename <ad>` ve belediye başkanları `/town rename <ad>` komutlarıyla siyasi haritayı canlı güncelleyebilir.
+
+### 1:500 Gerçek Dünya Haritası ve Tile Kurulumu
+
+1. **Minecraft 1.20.1 Uyumluluğu:** [earth.motfe.net/map-downloads](https://earth.motfe.net/map-downloads/) katalogundaki **1.19.3 (73.728 × 36.864 blok, 1:500)** sürümü Minecraft 1.20.1 Anvil formatıyla doğrudan uyumludur (`DataVersion <= 3465`). **1.21.4+ / 26.3+ Diamond Edition** paketleri 1.20.1 ile uyumlu **değildir** (`AnvilTileGenerator` `DataVersion > 3465` olan uyumsuz chunk'ları otomatik reddeder).
+2. **Disk ve Dizin Yapısı (Büyük dosyalar için önerilen `D:` diski düzeni):**
+   - İndirilen arşivler: `D:\HeartsOfSteel\Downloads`
+   - Çıkartılmış dünya klasörü (`region/*.mca`): `D:\HeartsOfSteel\WorldMap`
+   - Üretilen harita tile piramidi (`z0`..`z7` + `calibration.json`): `D:\HeartsOfSteel\MapTiles`
+   - Geçici işleme dizini: `D:\HeartsOfSteel\Temp`
+   - İstemci önbelleği (`<MapId>` bazlı yalıtımlı): `D:\HeartsOfSteel\Cache`
+3. **Ön İşleme ile Harita Tile Üretimi (Sunucu Açmadan CLI veya Arka Plan Komutu):**
+   - **Sunucu kapalıyken (önerilen):**
+     ```powershell
+     java "-Djava.io.tmpdir=D:\HeartsOfSteel\Temp" -Xmx4G -cp "build\libs\historical_nations-9.0.0.jar;<minecraft_ve_kutuphane_classpath>" dev.zeorez.historicalnations.map.AnvilTileGenerator "D:\HeartsOfSteel\WorldMap\region" "D:\HeartsOfSteel\MapTiles" "minecraft:overworld"
+     ```
+   - **Sunucu çalışırken (ana tick döngüsünü yormadan arka plan iş parçacığında):** Seviye 2 operatör olarak `/map admin render` (veya `/map admin render <bölgeYarıçapı>`) çalıştırın, durumu `/map admin status` ile izleyin.
+4. **Sunucu Ayarları (`serverconfig/historical_nations-server.toml`):** `[politicalMap]`, `[earthMap]` (`scale = 500`, `minBlockX = -36864`, `maxBlockX = 36863`, `minBlockZ = -18432`, `maxBlockZ = 18431`, `blocksPerDegree = 204.8`, `tileDirectory = "D:/HeartsOfSteel/MapTiles"`) ve `[mapPerformance]` bölümlerinden özelleştirilebilir. Oyuncular tüm dünyayı indirmek zorunda değildir; yalnızca ekranda görünen tile'lar sunucudan akış (streaming) yoluyla yüklenir ve önbelleğe alınır.
 
 ## Test
 

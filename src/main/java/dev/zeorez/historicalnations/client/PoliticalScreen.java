@@ -3,6 +3,7 @@ package dev.zeorez.historicalnations.client;
 import dev.zeorez.historicalnations.core.OfficeActions;
 import dev.zeorez.historicalnations.gui.PanelNetwork;
 import dev.zeorez.historicalnations.gui.PanelQuery;
+import dev.zeorez.historicalnations.map.MapModels.FocusKind;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.*;
@@ -24,6 +25,8 @@ public final class PoliticalScreen extends Screen {
     private static final String[] NAV_KEYS={"my_town","my_nation","town_directory","nations","player"};
     private static final ResourceLocation SEALS=ResourceLocation.fromNamespaceAndPath("historical_nations","textures/gui/offices.png");
     private static int sequence;
+    private static Screen pendingReturnScreen;
+    private final Screen returnScreen;
     private final Deque<PanelQuery> history=new ArrayDeque<>();
     private PanelQuery query;
     private CompoundTag data;
@@ -35,14 +38,21 @@ public final class PoliticalScreen extends Screen {
     private EditBox editor;
     private OfficeActions editing;
     private Button submit;
-    private PoliticalScreen() { super(tr("home")); }
+    private PoliticalScreen(Screen returnScreen) { super(tr("home")); this.returnScreen=returnScreen; }
     private static Component tr(String key) { return Component.translatable("hn.panel."+key); }
     private static Component label(String value) { return value.startsWith("@@") ? Component.literal(value.substring(1)) : value.startsWith("@") ? tr(value.substring(1)) : Component.literal(value); }
+    public static void openDossier(View view, UUID targetId, Screen returnTo) {
+        pendingReturnScreen = returnTo;
+        PanelNetwork.CHANNEL.sendToServer(PanelQuery.open(view, targetId));
+    }
     public static void receive(PanelNetwork.Page page) {
         var mc=Minecraft.getInstance();
         if (mc.player==null) return;
         PoliticalScreen screen;
-        if (page.q().serial()==0) screen=new PoliticalScreen();
+        if (page.q().serial()==0) {
+            screen=new PoliticalScreen(pendingReturnScreen);
+            pendingReturnScreen=null;
+        }
         else if (mc.screen instanceof PoliticalScreen current && current.expected==page.q().serial()) screen=current;
         else return;
         if (screen.debounce>0 && page.q().view()==screen.query.view() && !screen.search.equals(page.q().search())) return;
@@ -69,6 +79,9 @@ public final class PoliticalScreen extends Screen {
         if(history.isEmpty()) { onClose(); return; }
         var p=history.pop();
         send(request(p.view(),p.target(),p.sort(),p.descending(),p.search(),p.page()));
+    }
+    @Override public void onClose() {
+        if (minecraft != null) minecraft.setScreen(returnScreen);
     }
     private boolean directory() { return query.view()==View.TOWNS || query.view()==View.NATIONS || query.view()==View.MEMBER_TOWNS; }
     private boolean national() { return switch(query.view()) { case NATION,NATIONS,NATION_OFFICE,MEMBER_TOWNS -> true; default -> false; }; }
@@ -131,7 +144,17 @@ public final class PoliticalScreen extends Screen {
         editor=null; submit=null;
         int x=left+7, w=panelWidth-14;
         tab(left+panelWidth-46,top+5,39,tr("back"),false,this::previous);
-        if(query.view()==View.HOME) { homeCards(x,w); return; }
+        UUID subjectId=data.hasUUID("subject")?data.getUUID("subject"):null;
+        if(query.view()==View.HOME) {
+            tab(left+panelWidth-124,top+5,75,Component.translatable("hn.map.open_btn"),false,
+                    ()->PoliticalMapScreen.openWithFocus(FocusKind.PLAYER,null,0,0,this));
+            homeCards(x,w); return;
+        }
+        if(subjectId!=null && query.view()!=View.MEMBER && query.view()!=View.PLAYER) {
+            boolean isNat=national();
+            tab(left+panelWidth-132,top+5,83,Component.translatable("hn.map.view_on_map"),false,
+                    ()->PoliticalMapScreen.openWithFocus(isNat?FocusKind.NATION:FocusKind.TOWN,subjectId,0,0,this));
+        }
         for(int i=0;i<NAV.length;i++) {
             View v=NAV[i]; int a=x+w*i/5,b=x+w*(i+1)/5;
             addRenderableWidget(new Tab(a,top+25,b-a-1,tr(NAV_KEYS[i]),query.view()==v,i,()->navigate(v,null)));
@@ -241,7 +264,7 @@ public final class PoliticalScreen extends Screen {
         };
         g.renderOutline(left+7,top+5,17,16,BORDER);
         g.blit(SEALS,left+11,top+8,(float)(seal*10),0,10,10,50,10);
-        g.drawString(font,trim(label(data.getString("title")).getString(),panelWidth-82),left+30,top+9,GOLD,false);
+        g.drawString(font,trim(label(data.getString("title")).getString(),panelWidth-168),left+30,top+9,GOLD,false);
         g.fill(left+5,bottom-24,left+panelWidth-5,bottom-23,0xff4a5350);
         if(editing==null && data.contains("total")) {
             int start=left+(rows().size()>visible?70:10);
@@ -289,6 +312,12 @@ public final class PoliticalScreen extends Screen {
                 if(hover && mx>=at && mx<end && font.width(value)>end-start-2)
                     setTooltipForNextRenderPass(font.split(label(raw),Math.max(100,panelWidth-28)));
             }
+            if(directory() && r.hasUUID("id")) {
+                int pinX=x+w-15;
+                boolean hoverPin=hover && mx>=pinX && mx<x+w-2;
+                g.drawString(font,"⌖",pinX+3,y+5,hoverPin?GOLD:MUTED,false);
+                if(hoverPin) setTooltipForNextRenderPass(font.split(Component.translatable("hn.map.view_on_map"),160));
+            }
         }
     }
     @Override public boolean mouseClicked(double x,double y,int button) {
@@ -297,7 +326,15 @@ public final class PoliticalScreen extends Screen {
         int i=offset+(int)((y-body)/STEP);
         if(i>=rows().size()) return false;
         var r=rows().getCompound(i);
-        if(r.hasUUID("id")) navigate(View.valueOf(r.getString("view")),r.getUUID("id"));
+        if(r.hasUUID("id")) {
+            int rowRight=left+panelWidth-7;
+            if(directory() && x>=rowRight-16) {
+                boolean isNat=r.getString("view").equals(View.NATION.name());
+                PoliticalMapScreen.openWithFocus(isNat?FocusKind.NATION:FocusKind.TOWN,r.getUUID("id"),0,0,this);
+                return true;
+            }
+            navigate(View.valueOf(r.getString("view")),r.getUUID("id"));
+        }
         else if(r.contains("action")) {
             editing=OfficeActions.valueOf(r.getString("action")); draft=query.view()==View.MEMBER?query.target().toString():""; feedback=Component.empty();rebuildWidgets();
         }

@@ -39,7 +39,9 @@ public final class PanelNetwork {
         CHANNEL.messageBuilder(Action.class,1,PLAY_TO_SERVER).encoder(Action::write).decoder(Action::read)
             .consumerMainThread((a,ctx)->handle(ctx.get().getSender(),a.q,a)).add();
         CHANNEL.messageBuilder(Page.class,2,PLAY_TO_CLIENT).encoder(Page::write).decoder(Page::read)
-            .consumerMainThread((p,ctx)->dev.zeorez.historicalnations.client.PoliticalScreen.receive(p)).add();
+            .consumerMainThread((p,ctx)->net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(
+                    net.minecraftforge.api.distmarker.Dist.CLIENT,
+                    ()->()->dev.zeorez.historicalnations.client.PoliticalScreen.receive(p))).add();
     }
     public static boolean open(ServerPlayer p, View view, UUID id) {
         if (p.server.getPlayerList().getPlayer(p.getUUID())!=p || !CHANNEL.isRemotePresent(p.connection.connection)) return false;

@@ -3,6 +3,7 @@ package dev.zeorez.historicalnations.core;
 import dev.zeorez.historicalnations.api.HistoricalNationsApi;
 import dev.zeorez.historicalnations.api.Town;
 import dev.zeorez.historicalnations.api.Nation;
+import dev.zeorez.historicalnations.map.NationPalette;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.saveddata.SavedData;
@@ -16,10 +17,19 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     public final dev.zeorez.historicalnations.property.PropertyBook properties =
             new dev.zeorez.historicalnations.property.PropertyBook(this);
     PoliticalPanel.Counts directoryCounts;
+    private boolean mapDirty = true;
+    UUID mapId = UUID.randomUUID();
     @Override
     public void setDirty() {
         directoryCounts = null;
+        mapDirty = true;
         super.setDirty();
+    }
+    public UUID mapId() { return mapId; }
+    public boolean consumeMapDirty() {
+        if (!mapDirty) return false;
+        mapDirty = false;
+        return true;
     }
     final Ledger ledger = new Ledger(this);
     final TradeBook trade = new TradeBook(this);
@@ -27,6 +37,7 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     private static final Pattern NAME = Pattern.compile("[\\p{L}\\p{N}][\\p{L}\\p{M}\\p{N} _-]{0,31}");
     final Map<UUID, Town> towns = new LinkedHashMap<>();
     final Map<UUID, Nation> nations = new LinkedHashMap<>();
+    final Map<UUID, Integer> nationColors = new HashMap<>();
     final Map<UUID, UUID> deputies = new HashMap<>();
     final Map<UUID, String> descriptions = new HashMap<>();
     final Map<UUID, UUID> playerTowns = new HashMap<>();
@@ -262,11 +273,54 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     public Nation createNation(UUID actor, String name) {
         String clean = checkCreateNation(actor, name);
         Town town = mayorTown(actor);
-        Nation nation = new Nation(UUID.randomUUID(), clean, town.id());
+        UUID id = UUID.randomUUID();
+        Nation nation = new Nation(id, clean, town.id());
         nations.put(nation.id(), nation);
+        nationColors.put(nation.id(), NationPalette.pickDistinct(nationColors.values(), nation.id()));
         ledger.market.bank(nation.id());
         joinNation(town, nation);
         return nation;
+    }
+
+    public int nationColor(UUID nationId) {
+        if (nationId == null) return NationPalette.INDEPENDENT_COLOR;
+        return nationColors.getOrDefault(nationId, NationPalette.INDEPENDENT_COLOR);
+    }
+
+    public void setNationColor(UUID actor, int rgb) {
+        Nation nation = ledNation(actor);
+        nationColors.put(nation.id(), rgb & 0xFFFFFF);
+        setDirty();
+    }
+
+    public Town renameTown(UUID actor, String newName) {
+        Town town = mayorTown(actor);
+        String clean = cleanName(newName);
+        require(findTown(clean).map(t -> t.id().equals(town.id())).orElse(true), "name_taken");
+        Town updated = new Town(town.id(), clean, town.mayor());
+        towns.put(town.id(), updated);
+        setDirty();
+        return updated;
+    }
+
+    public Nation renameNation(UUID actor, String newName) {
+        Nation nation = ledNation(actor);
+        String clean = cleanName(newName);
+        require(findNation(clean).map(n -> n.id().equals(nation.id())).orElse(true), "name_taken");
+        Nation updated = new Nation(nation.id(), clean, nation.capitalTown());
+        nations.put(nation.id(), updated);
+        setDirty();
+        return updated;
+    }
+
+    public Nation setCapital(UUID actor, String townName) {
+        Nation nation = ledNation(actor);
+        Town target = namedTown(townName);
+        require(nation.id().equals(townNations.get(target.id())), "not_member_town");
+        Nation updated = new Nation(nation.id(), nation.name(), target.id());
+        nations.put(nation.id(), updated);
+        setDirty();
+        return updated;
     }
     private void joinNation(Town town, Nation nation) {
         townNations.put(town.id(), nation.id());
@@ -303,6 +357,7 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
         ledger.close(Ledger.Account.nation(nation.id()), actor);
         trade.disband(nation.id());
         nations.remove(nation.id());
+        nationColors.remove(nation.id());
         townNations.values().removeIf(nation.id()::equals);
         nationInvites.removeIf(i -> i.issuer().equals(nation.id()));
         setDirty();

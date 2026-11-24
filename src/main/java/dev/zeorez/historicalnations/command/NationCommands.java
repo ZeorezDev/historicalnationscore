@@ -5,11 +5,13 @@ import dev.zeorez.historicalnations.gui.PanelNetwork;
 import dev.zeorez.historicalnations.gui.PanelQuery.View;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
+import dev.zeorez.historicalnations.TerritoryConfig;
 import dev.zeorez.historicalnations.api.Nation;
 import dev.zeorez.historicalnations.api.Town;
 import dev.zeorez.historicalnations.core.GoldCosts;
@@ -17,6 +19,11 @@ import dev.zeorez.historicalnations.core.RuleViolation;
 import dev.zeorez.historicalnations.core.WorldRegistry;
 import dev.zeorez.historicalnations.integration.OpenPacClaims;
 import dev.zeorez.historicalnations.integration.TownTerritories;
+import dev.zeorez.historicalnations.map.AnvilTileGenerator;
+import dev.zeorez.historicalnations.map.MapCalibration;
+import dev.zeorez.historicalnations.map.MapModels.FocusKind;
+import dev.zeorez.historicalnations.map.MapNetwork;
+import dev.zeorez.historicalnations.map.NationPalette;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.arguments.GameProfileArgument;
 import net.minecraft.network.chat.Component;
@@ -36,6 +43,28 @@ public final class NationCommands {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(literal("hnc").executes(run(c ->
                 PanelNetwork.open(c.player, View.HOME, null) ? null : msg("panel_help"))));
+
+        var mapCmd = literal("map").executes(run(c -> {
+            if (!TerritoryConfig.MAP_ENABLED.get()) return msg("map_disabled");
+            return MapNetwork.requestClientOpen(c.player, FocusKind.PLAYER, null, 0, 0) ? null : msg("map_client_required");
+        }));
+        var mapAdmin = literal("admin").requires(src -> src.hasPermission(2));
+        mapAdmin.then(literal("status").executes(ctx -> {
+            var server = ctx.getSource().getServer();
+            var cal = MapCalibration.fromServer(server);
+            var st = AnvilTileGenerator.status();
+            var root = MapCalibration.resolveTileRoot(server);
+            ctx.getSource().sendSuccess(() -> Component.literal(
+                    "MapTiles=" + root + " | scale=1:" + cal.scale() + " | calibrated=" + cal.calibrated()
+                            + " | renderRunning=" + st.running() + " (" + st.processedRegions() + "/" + st.totalRegions() + ") " + st.message()), false);
+            return 1;
+        }));
+        mapAdmin.then(literal("render").executes(ctx -> startRenderCmd(ctx.getSource(), 0))
+                .then(argument("radiusRegions", IntegerArgumentType.integer(0, 500))
+                        .executes(ctx -> startRenderCmd(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "radiusRegions")))));
+        mapCmd.then(mapAdmin);
+        dispatcher.register(mapCmd);
+
         var town = literal("town");
         town.then(named("create", (c, name) -> msg("town_created", c.land().createTown(c.player, name).name())));
         town.then(literal("invite").then(argument("player", GameProfileArgument.gameProfile()).executes(run(c -> {
@@ -101,6 +130,10 @@ public final class NationCommands {
             c.data.describe(c.id(), "");
             return msg("updated");
         }))));
+        town.then(named("rename", (c, value) -> {
+            c.data.renameTown(c.id(), value);
+            return msg("updated");
+        }));
         dispatcher.register(town);
 
         var nation = literal("nation");
@@ -126,7 +159,27 @@ public final class NationCommands {
             c.data.disbandNation(c.id());
             return msg("nation_disbanded");
         })));
+        nation.then(named("rename", (c, value) -> {
+            c.data.renameNation(c.id(), value);
+            return msg("updated");
+        }));
+        nation.then(named("setcapital", (c, value) -> {
+            c.data.setCapital(c.id(), value);
+            return msg("updated");
+        }));
+        nation.then(named("color", (c, value) -> {
+            c.data.setNationColor(c.id(), NationPalette.parseHex(value));
+            return msg("updated");
+        }));
         dispatcher.register(nation);
+    }
+
+    private static int startRenderCmd(CommandSourceStack source, int radius) {
+        var server = source.getServer();
+        var root = MapCalibration.resolveTileRoot(server);
+        boolean started = AnvilTileGenerator.startBackgroundRender(server, root, radius);
+        source.sendSuccess(() -> msg(started ? "map_render_started" : "map_render_busy", root.toString()), true);
+        return started ? 1 : 0;
     }
 
     interface Action {

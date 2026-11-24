@@ -15,7 +15,8 @@ public enum OfficeActions {
     TAX("tax set","amount"), UPKEEP("upkeep set","amount"), INVITE_TOWN("invite","town"),
     CREATE_CURRENCY("currency create","currency_args"), ISSUE("centralbank issue","amount",true),
     INTEREST("centralbank interest","percent"), TARIFF("tariff set","percent"),
-    EMBARGO("embargo add","nation",true), LIFT("embargo remove","nation");
+    EMBARGO("embargo add","nation",true), LIFT("embargo remove","nation"),
+    RENAME("rename","name_arg"), COLOR("color","color_arg"), CAPITAL("setcapital","town",true);
 
     private final String command;
     public final String input;
@@ -35,7 +36,7 @@ public enum OfficeActions {
             result.add(DEPOSIT);
             if (mayor && !town.id().equals(nation.capitalTown())) result.add(LEAVE);
             if (mayor && town.id().equals(nation.capitalTown())) {
-                result.addAll(List.of(WITHDRAW,TAX,UPKEEP,INVITE_TOWN,INTEREST,TARIFF,EMBARGO,LIFT,DISBAND));
+                result.addAll(List.of(RENAME,COLOR,CAPITAL,WITHDRAW,TAX,UPKEEP,INVITE_TOWN,INTEREST,TARIFF,EMBARGO,LIFT,DISBAND));
                 result.add(d.ledger.market.bank(target).code.isEmpty() ? CREATE_CURRENCY : ISSUE);
             }
         } else if (town.id().equals(target)) {
@@ -43,7 +44,7 @@ public enum OfficeActions {
             if (!mayor) result.add(LEAVE);
             if (mayor || actor.equals(d.deputy(target))) result.addAll(List.of(INVITE,KICK,DESCRIPTION,CLEAR_DESCRIPTION));
             if (mayor) {
-                result.addAll(List.of(WITHDRAW,TAX,UPKEEP,DEPUTY,MAYOR));
+                result.addAll(List.of(RENAME,WITHDRAW,TAX,UPKEEP,DEPUTY,MAYOR));
                 if (d.deputy(target)!=null) result.add(REMOVE_DEPUTY);
                 if (nation==null || !town.id().equals(nation.capitalTown())) result.add(DISBAND);
             }
