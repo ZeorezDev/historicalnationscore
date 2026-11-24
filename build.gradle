@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'dev.zeorez.historicalnations'
-version = '7.0.0'
+version = '8.0.0'
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 sourceSets {
@@ -30,6 +30,7 @@ minecraft {
                 workingDirectory project.file("run-${testPlayer}")
                 mods { hn_integration_tests { source sourceSets.integration } }
                 property 'hn.test.client', testPlayer
+                if (project.hasProperty('hnPanelTest')) property 'hn.test.panel', 'true'
                 args '--username', testPlayer, '--width', '480', '--height', '270'
                 jvmArgs '-Xmx2G', '-XX:ActiveProcessorCount=4'
             }

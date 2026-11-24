@@ -33,17 +33,64 @@ import java.util.UUID;
 @Mod("hn_integration_tests")
 public final class PrototypeServerTest {
     private boolean ran;
+    private boolean panelStarted, panelObserved;
+    private final java.util.Set<UUID> panelAcks = new java.util.HashSet<>();
     private boolean saleOffered;
     private int saleTick;
     private String competingTrade;
 
     public PrototypeServerTest() {
         MinecraftForge.EVENT_BUS.addListener(this::tick);
+        if ("panelNetwork".equals(System.getProperty("hn.test.phase")))
+            MinecraftForge.EVENT_BUS.addListener(this::registerPanelAck);
+    }
+    private void registerPanelAck(net.minecraftforge.event.RegisterCommandsEvent event) {
+        event.getDispatcher().register(net.minecraft.commands.Commands.literal("hnpanelack").executes(c -> {
+            panelAcks.add(c.getSource().getPlayerOrException().getUUID());
+            return 1;
+        }));
     }
     private void tick(TickEvent.ServerTickEvent event) {
         String phase = System.getProperty("hn.test.phase", "");
         MinecraftServer server = event.getServer();
         if (ran || phase.isEmpty() || event.phase != TickEvent.Phase.END || server.getTickCount() < 40) return;
+        if (phase.equals("panelNetwork")) {
+            try {
+                if (server.getTickCount()>7200) throw new AssertionError("GUI client timeout");
+                var a=server.getPlayerList().getPlayerByName("HnNetA");
+                var b=server.getPlayerList().getPlayerByName("HnNetB");
+                if (a==null || b==null) return;
+                var data=WorldRegistry.get(server);
+                if (!panelStarted) {
+                    var suite=new Suite(server);
+                    dev.zeorez.historicalnations.core.GoldCosts.giveGold(a,130);
+                    suite.command(a,"town create Bursa","town_created");
+                    suite.command(a,"nation create Union","nation_created");
+                    suite.command(a,"town invite HnNetB","invited");
+                    suite.command(b,"town accept Bursa","town_joined");
+                    String[][] fixtures={{"Alder Republic","Alderport"},{"Danubian League","Rivergate"},
+                            {"Northland","Northhaven"},{"Coastal Federation","Port Azure"},{"Free Cities","Highbridge"},
+                            {"Meridian","Southport"},{"Commonwealth of Vale","West Vale"},{"East March","Fairhill"}};
+                    for(int i=0;i<fixtures.length;i++) {
+                        var mayor=suite.player("Governor"+(i+1)).getUUID();
+                        data.createTown(mayor,fixtures[i][1]);
+                        data.createNation(mayor,fixtures[i][0]);
+                    }
+                    a.sendSystemMessage(Component.literal("HN_PANEL_START"));
+                    panelStarted=true;
+                }
+                if (!panelObserved && data.description(data.home(a.getUUID()).id()).equals("Council verified")) {
+                    b.sendSystemMessage(Component.literal("HN_PANEL_READ"));
+                    panelObserved=true;
+                }
+                if (!panelObserved || !panelAcks.containsAll(java.util.List.of(a.getUUID(),b.getUUID()))) return;
+                check(data.description(data.home(a.getUUID()).id()).equals("Council verified"),"unauthorized overwrite");
+                LogUtils.getLogger().info("HN INTEGRATION PASS panelNetwork");
+            } catch (Exception | AssertionError error) {
+                LogUtils.getLogger().error("HN INTEGRATION FAIL panelNetwork",error);
+            }
+            ran=true; server.halt(false); return;
+        }
         if (phase.equals("tradeNetwork")) {
             var a = server.getPlayerList().getPlayerByName("HnNetA");
             var b = server.getPlayerList().getPlayerByName("HnNetB");
@@ -127,6 +174,7 @@ public final class PrototypeServerTest {
                 case "tradeRestart" -> new TradeTest(suite).restart();
                 case "economySetup" -> new EconomyTest(suite).setup();
                 case "economyVerify" -> new EconomyTest(suite).verify();
+                case "politics" -> PoliticalPanelTest.run(suite);
                 case "goldSetup" -> new GoldSettlementTest(suite).setup();
                 case "goldVerify" -> new GoldSettlementTest(suite).verify();
                 case "goldUpgrade" -> new GoldSettlementTest(suite).upgradeFromV6();

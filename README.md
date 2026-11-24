@@ -1,8 +1,12 @@
-# Historical Nations Core · v7.0.0
+# Historical Nations Core · v8.0.0
 
 <img src="src/main/resources/historical_nations_logo.png" alt="Historical Nations Core amblemi" width="320">
 
-Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehirleri, devletleri ve vatandaşlığı yönetir. Oyuncular yönetim işlemlerini sohbet komutlarıyla yapar. Her dünya kaydı kendi şehir ve devlet verisini taşır.
+Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehirleri, devletleri ve vatandaşlığı yönetir. Oyuncular `/hnc` üzerinden yönetim panelini açabilir. `/t info [kasaba]` ve `/n info [devlet]` bilgi dosyasını, `/t list` ve `/n list` aranabilir rehberleri açar. `/town` ve `/nation` uzun komutları da desteklenir. Her dünya kaydı kendi şehir ve devlet verisini taşır.
+
+Rehberlerde sütun başlığına tıklayarak sıralama ölçütünü, tekrar tıklayarak yönü değiştirebilirsiniz. Nüfus çevrimdışı vatandaşları da kapsar. Arazi sütunu doğrulanmış OPAC şehir chunk’larını sayar. **Hazine (TRY)** bütün devlet hesaplarındaki bakiyelerin güncel resmî kurlarla toplam karşılığıdır. Bu karşılaştırma para dönüştürmez. Altın, gümüş ve bronz şeritler seçili sayısal sıralamada ilk üç sonucu gösterir. Bir satıra tıklayarak ayrıntıları açabilirsiniz.
+
+Belediye ve devlet bilgi ekranlarındaki Yönetim sekmesi, üyelik ve göreve uygun işlemleri gösterir. Banka işlemlerinde miktardan sonra isteğe bağlı para kodu girilebilir. Kasaba sakinlerinin kafasına tıklayarak görevlerini ve çevrimiçi durumlarını görebilirsiniz.
 
 | Bileşen | Bu sürüm |
 | --- | --- |
@@ -16,7 +20,7 @@ Historical Nations Core, alternatif tarih temalı Minecraft sunucularında şehi
 ## Kurulum ve derleme
 
 1. JDK 17 ile `JAVA_HOME` ayarlayın. Depo kökünde Windows için `.\gradlew.bat build`, Linux veya macOS için `./gradlew build` çalıştırın.
-2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-7.0.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
+2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-8.0.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
 3. Sunucuyu açın. Oyunda `/town list` ve `/town claimstatus` komutlarıyla kurulumu deneyin. Sohbet metinleri istemcinin dil ayarını izler.
 
 [Forge 1.20.1 indirmeleri](https://files.minecraftforge.net/net/minecraftforge/forge/index_1.20.1.html) · [Resmî OPAC 0.33.0 paketleri](https://chocolateminecraft.com/maven/xaero/pac/open-parties-and-claims-forge-1.20.1/0.33.0/)

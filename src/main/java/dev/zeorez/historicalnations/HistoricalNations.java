@@ -15,6 +15,7 @@ public final class HistoricalNations {
     public static final String ID = "historical_nations";
 
     public HistoricalNations() {
+        dev.zeorez.historicalnations.gui.PanelNetwork.register();
         ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, TerritoryConfig.SPEC);
         MinecraftForge.EVENT_BUS.register(dev.zeorez.historicalnations.property.QuarterCommands.class);
         MinecraftForge.EVENT_BUS.register(dev.zeorez.historicalnations.property.ParcelProtection.class);
@@ -35,5 +36,8 @@ public final class HistoricalNations {
         dev.zeorez.historicalnations.core.TradeCommands.register(event.getDispatcher());
         dev.zeorez.historicalnations.core.EconomyCommands.register(event.getDispatcher());
         dev.zeorez.historicalnations.property.PropertyCommands.register(event.getDispatcher());
+        var dispatcher = event.getDispatcher();
+        dispatcher.register(net.minecraft.commands.Commands.literal("t").redirect(dispatcher.getRoot().getChild("town")));
+        dispatcher.register(net.minecraft.commands.Commands.literal("n").redirect(dispatcher.getRoot().getChild("nation")));
     }
 }

@@ -99,3 +99,10 @@ v0.2.0 doğrulamasında Java 17, Forge 47.4.28 ve OPAC 0.33.0 ile `PASS territor
 | OPAC eksik veya sürüm 0.32.7 | Forge her iki durumda da yüklemeyi durdurdu ve gerekli 0.33.0 sürümünü bildirdi. |
 
 İlk otomatik istemci denemesinde hızlı bağlantı zaman aşımına uğradı. Test, oyun ana menüye ulaştıktan sonra normal bağlantıyı başlatacak şekilde güncellendi. OPAC, isteğe bağlı parti ve izin sağlayıcıları bulunmadığında günlükte varsayılan sağlayıcıları seçtiğini bildirdi.
+
+## v8.0.0 siyasi yönetim paneli
+
+- `-Dhn.test.phase=politics` için boş dünya kullanın. Test 401 devlet ve 402 kasaba ile rehber sıralamasını, sayfa sınırını, ortak kurla hazine değerini, yetki kontrollerini ve eski metin çıktısını sınar. Gerçek OPAC claim, plot ve quarter bilgi komutlarını da çalıştırır.
+- `-Dhn.test.phase=panelNetwork` için başka bir boş dünya ve yukarıdaki iki yerel istemciyi kullanın. Her iki `runClient` komutuna da `-PhnPanelTest` ekleyin. İstemciler rehber satırları ve düğmelerle gezinir, GUI ölçeklerini değiştirir, devlet dağıtmayı iptal eder ve belediye açıklamasını iki farklı yetkiyle düzenlemeyi dener.
+- Başarı işaretleri `HN INTEGRATION PASS politics` ve `HN INTEGRATION PASS panelNetwork`. Test istemcisinin dizinindeki `screenshots/` klasörüne gerçek rehber görüntüleri kaydedilir.
+- v7.0.0 → v8.0.0 geçişi için v7.0.0 dağıtımı ve test modu ile yeni bir dünyada `goldSetup` çalıştırın. Aynı kaydı v8.0.0 dağıtımı ve test modu ile `goldVerify` aşamasında açın.

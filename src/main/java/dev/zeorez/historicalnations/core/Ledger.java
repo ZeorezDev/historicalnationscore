@@ -234,6 +234,19 @@ final class Ledger {
             LogUtils.getLogger().error("Historical Nations economy locked. Restore the ledger from backup.", invalid);
         }
     }
+    /** Reference-currency millionths at the same official quotes used by the exchange. */
+    Map<UUID, BigInteger> treasuryValues() {
+        available();
+        var totals = new HashMap<UUID, BigInteger>();
+        accounts.forEach((account,state) -> {
+            if (account.kind == Kind.NATION && state.balance != 0) {
+                long quote = market.resolve(account.currency).quote;
+                totals.merge(account.id, BigInteger.valueOf(state.balance).multiply(BigInteger.valueOf(quote)), BigInteger::add);
+            }
+        });
+        return totals;
+    }
+
     Map<String, BigInteger> supplies() {
         var amounts = new HashMap<String, BigInteger>();
         accounts.forEach((a,s) -> amounts.merge(a.currency, BigInteger.valueOf(s.balance), BigInteger::add));
