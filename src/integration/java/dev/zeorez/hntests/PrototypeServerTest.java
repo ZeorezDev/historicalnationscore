@@ -248,8 +248,12 @@ public final class PrototypeServerTest {
                 case "goldSetup" -> new GoldSettlementTest(suite).setup();
                 case "goldVerify" -> new GoldSettlementTest(suite).verify();
                 case "goldUpgrade" -> new GoldSettlementTest(suite).upgradeFromV6();
+                case "citySetup" -> CityEvaluationTest.setup(suite);
+                case "cityVerify" -> CityEvaluationTest.verify(suite);
                 case "mapSetup" -> new WorldMapTest(suite).setup();
                 case "mapVerify" -> new WorldMapTest(suite).verify();
+                case "warSetup" -> new WarIntegrationTest(suite).setup();
+                case "warVerify" -> new WarIntegrationTest(suite).verify();
                 default -> throw new IllegalArgumentException("Unknown test phase " + phase);
             }
             LogUtils.getLogger().info("HN INTEGRATION PASS {}", phase);

@@ -16,7 +16,10 @@ public enum OfficeActions {
     CREATE_CURRENCY("currency create","currency_args"), ISSUE("centralbank issue","amount",true),
     INTEREST("centralbank interest","percent"), TARIFF("tariff set","percent"),
     EMBARGO("embargo add","nation",true), LIFT("embargo remove","nation"),
-    RENAME("rename","name_arg"), COLOR("color","color_arg"), CAPITAL("setcapital","town",true);
+    RENAME("rename","name_arg"), COLOR("color","color_arg"), CAPITAL("setcapital","town",true),
+    SPAWN("spawn",""), SET_SPAWN("set spawn",""),
+    ALLY("ally","nation"), UNALLY("unally","nation",true),
+    DECLARE_WAR("war declare","nation",true), JOIN_WAR("war join","nation",true), PEACE_TREATY("war peace","nation");
 
     private final String command;
     public final String input;
@@ -33,18 +36,20 @@ public enum OfficeActions {
         Nation nation = d.getTownNation(town.id()).orElse(null);
         if (national) {
             if (nation == null || !nation.id().equals(target)) return result;
+            result.add(SPAWN);
             result.add(DEPOSIT);
             if (mayor && !town.id().equals(nation.capitalTown())) result.add(LEAVE);
             if (mayor && town.id().equals(nation.capitalTown())) {
-                result.addAll(List.of(RENAME,COLOR,CAPITAL,WITHDRAW,TAX,UPKEEP,INVITE_TOWN,INTEREST,TARIFF,EMBARGO,LIFT,DISBAND));
+                result.addAll(List.of(SET_SPAWN,DECLARE_WAR,PEACE_TREATY,JOIN_WAR,ALLY,UNALLY,RENAME,COLOR,CAPITAL,WITHDRAW,TAX,UPKEEP,INVITE_TOWN,INTEREST,TARIFF,EMBARGO,LIFT,DISBAND));
                 result.add(d.ledger.market.bank(target).code.isEmpty() ? CREATE_CURRENCY : ISSUE);
             }
         } else if (town.id().equals(target)) {
+            result.add(SPAWN);
             result.add(DEPOSIT);
             if (!mayor) result.add(LEAVE);
             if (mayor || actor.equals(d.deputy(target))) result.addAll(List.of(INVITE,KICK,DESCRIPTION,CLEAR_DESCRIPTION));
             if (mayor) {
-                result.addAll(List.of(RENAME,WITHDRAW,TAX,UPKEEP,DEPUTY,MAYOR));
+                result.addAll(List.of(SET_SPAWN,RENAME,WITHDRAW,TAX,UPKEEP,DEPUTY,MAYOR));
                 if (d.deputy(target)!=null) result.add(REMOVE_DEPUTY);
                 if (nation==null || !town.id().equals(nation.capitalTown())) result.add(DISBAND);
             }
@@ -67,7 +72,9 @@ public enum OfficeActions {
             public boolean acceptsFailure() { return true; }
             public boolean shouldInformAdmins() { return false; }
         };
-        String line=(national ? "nation " : "town ")+command+(args.isEmpty() ? "" : " "+args);
+        String line = command.startsWith("war ")
+                ? (command + (args.isEmpty() ? "" : " " + args))
+                : ((national ? "nation " : "town ") + command + (args.isEmpty() ? "" : " " + args));
         int result=player.server.getCommands().performPrefixedCommand(player.createCommandSourceStack().withSource(feedback),line);
         return new Result(result>0,feedback.last);
     }

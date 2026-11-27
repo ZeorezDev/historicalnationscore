@@ -18,6 +18,7 @@ import dev.zeorez.historicalnations.map.MapModels.FocusKind;
 import dev.zeorez.historicalnations.map.MapModels.NationSummary;
 import dev.zeorez.historicalnations.map.MapModels.ServerMapSettings;
 import dev.zeorez.historicalnations.map.MapModels.TownSummary;
+import dev.zeorez.historicalnations.map.MapNetwork;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -26,6 +27,7 @@ import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 
@@ -61,7 +63,7 @@ public final class PoliticalMapScreen extends Screen {
     private static final int MUTED = 0xFFA4B0B2;
     private static final int BORDER = 0xFF71654C;
 
-    private static final double MIN_ZOOM = 0.010D; // Fits entire 73,728 x 36,864 Earth 1:500 comfortably
+    private static final double MIN_ZOOM = 0.005D; // Fits entire 73,728 x 36,864 Earth 1:500 even at GUI Scale 4
     private static final double MAX_ZOOM = 8.000D; // 128 px per chunk close-up
     private static final int TOP_BAR_H = 26;
     private static final int BOTTOM_BAR_H = 18;
@@ -96,15 +98,25 @@ public final class PoliticalMapScreen extends Screen {
     private Integer markerBlockX, markerBlockZ;
     private int highlightTicks = 0;
 
-    // Right-click Town Info Popup state
+    // Right-click Town Info / OP Coordinate Teleport Popup state
     private UUID popupTownId;
+    private boolean coordPopupOpen = false;
+    private int popupCoordX, popupCoordZ;
     private int popupX, popupY, popupW, popupH;
     private int popupHeaderH = 18;
     private int viewTownBtnX, viewTownBtnY, viewTownBtnW, viewTownBtnH;
+    private int evalCityBtnY;
+    private int teleportBtnX, teleportBtnY, teleportBtnW, teleportBtnH;
 
-    // Clickable Nation labels rendered in the current frame
+    // Clickable Nation labels & Active War Flag icons rendered in the current frame
     private record LabelHitBox(int x1, int y1, int x2, int y2, UUID nationId) {}
+    private record FlagHitBox(int x1, int y1, int x2, int y2, UUID flagId) {}
     private final List<LabelHitBox> nationLabelBoxes = new ArrayList<>();
+    private final List<FlagHitBox> flagHitBoxes = new ArrayList<>();
+    private UUID selectedFlagId;
+    private int flagPopupX, flagPopupY, flagPopupW, flagPopupH;
+    private int peaceBtnY = -1;
+    private UUID popupWarId;
 
     // Search UI
     private boolean searchVisible = false;
@@ -125,6 +137,16 @@ public final class PoliticalMapScreen extends Screen {
         openWithFocus(focus, targetId, blockX, blockZ, null);
     }
 
+    public static void openInMode(TerritoryConfig.MapMode mode, Screen returnTo) {
+        openWithFocus(FocusKind.WAR_MODE, null, 0, 0, returnTo);
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.screen instanceof PoliticalMapScreen s) {
+            s.mapMode = mode;
+            s.settingsApplied = true;
+            s.rebuildWidgets();
+        }
+    }
+
     public static void openWithFocus(FocusKind focus, UUID targetId, int blockX, int blockZ, Screen returnTo) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
@@ -138,6 +160,7 @@ public final class PoliticalMapScreen extends Screen {
         if (mc.screen != screen) {
             mc.setScreen(screen);
         }
+        ClientMapState.INSTANCE.tiles.resetTransientState();
         ClientMapState.INSTANCE.requestSyncFromServer();
         screen.applyPendingFocusIfReady();
     }
@@ -158,6 +181,7 @@ public final class PoliticalMapScreen extends Screen {
             searchResults = ClientMapState.INSTANCE.search(searchText);
         }
         applyPendingFocusIfReady();
+        clampCamera();
     }
 
     private void applyPendingFocusIfReady() {
@@ -199,6 +223,9 @@ public final class PoliticalMapScreen extends Screen {
                 highlightedNationId = null;
                 highlightTicks = 200;
                 popupTownId = state.settings().enableTownInfoPopup() ? t.id() : null;
+                coordPopupOpen = false;
+                popupCoordX = t.homeBlockX();
+                popupCoordZ = t.homeBlockZ();
                 popupX = width / 2 + 18;
                 popupY = height / 2 - 40;
                 initializedCamera = true;
@@ -229,8 +256,21 @@ public final class PoliticalMapScreen extends Screen {
                 initializedCamera = true;
                 pendingFocus = FocusKind.NONE;
             }
+            case WAR_MODE -> {
+                mapMode = TerritoryConfig.MapMode.WAR;
+                settingsApplied = true;
+                if (mc.player != null && !initializedCamera) {
+                    centerX = mc.player.getX();
+                    centerZ = mc.player.getZ();
+                    pixelsPerBlock = 0.25D;
+                    initializedCamera = true;
+                }
+                pendingFocus = FocusKind.NONE;
+                rebuildWidgets();
+            }
             default -> {}
         }
+        clampCamera();
     }
 
     @Override
@@ -240,6 +280,7 @@ public final class PoliticalMapScreen extends Screen {
             centerZ = minecraft.player.getZ();
             initializedCamera = true;
         }
+        clampCamera();
 
         int x = 6;
         int y = 4;
@@ -247,18 +288,24 @@ public final class PoliticalMapScreen extends Screen {
         int gap = 3;
 
         // 1. Political Map
-        x = addBarBtn(x, y, btnWidth(tr("mode_political"), 68), h, tr("mode_political"), mapMode == TerritoryConfig.MapMode.POLITICAL, () -> {
+        x = addBarBtn(x, y, btnWidth(tr("mode_political"), 62), h, tr("mode_political"), mapMode == TerritoryConfig.MapMode.POLITICAL, () -> {
             mapMode = TerritoryConfig.MapMode.POLITICAL;
             rebuildWidgets();
         }) + gap;
 
         // 2. Terrain Map
-        x = addBarBtn(x, y, btnWidth(tr("mode_terrain"), 68), h, tr("mode_terrain"), mapMode == TerritoryConfig.MapMode.TERRAIN, () -> {
+        x = addBarBtn(x, y, btnWidth(tr("mode_terrain"), 60), h, tr("mode_terrain"), mapMode == TerritoryConfig.MapMode.TERRAIN, () -> {
             mapMode = TerritoryConfig.MapMode.TERRAIN;
+            rebuildWidgets();
+        }) + gap;
+
+        // 3. War Map Mode (v11.0.0)
+        x = addBarBtn(x, y, btnWidth(tr("mode_war"), 60), h, tr("mode_war"), mapMode == TerritoryConfig.MapMode.WAR, () -> {
+            mapMode = TerritoryConfig.MapMode.WAR;
             rebuildWidgets();
         }) + gap + 4;
 
-        // 3. Nation Borders
+        // 4. Nation Borders
         x = addBarBtn(x, y, btnWidth(tr("nation_borders"), 74), h, tr("nation_borders"), showNationBorders, () -> {
             showNationBorders = !showNationBorders;
             rebuildWidgets();
@@ -343,6 +390,7 @@ public final class PoliticalMapScreen extends Screen {
             centerX = minecraft.player.getX();
             centerZ = minecraft.player.getZ();
             if (pixelsPerBlock < 0.25D) pixelsPerBlock = 0.5D;
+            clampCamera();
         }
     }
 
@@ -354,10 +402,57 @@ public final class PoliticalMapScreen extends Screen {
         double afterWorldZ = screenToWorldZ(screenY);
         centerX += (beforeWorldX - afterWorldX);
         centerZ += (beforeWorldZ - afterWorldZ);
+        clampCamera();
     }
 
-    private static double clampZoom(double z) {
-        return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
+    private double clampZoom(double z) {
+        return Math.max(minAllowedZoom(), Math.min(MAX_ZOOM, z));
+    }
+
+    private double minAllowedZoom() {
+        ClientMapState state = ClientMapState.INSTANCE;
+        if (!state.settings().lockCameraToBounds() || width <= 0 || height <= TOP_BAR_H + BOTTOM_BAR_H) {
+            return MIN_ZOOM;
+        }
+        MapCalibration cal = state.calibration();
+        double spanX = Math.max(16.0D, (cal.eastBlockX() + 1.0D) - cal.westBlockX());
+        double spanZ = Math.max(16.0D, (cal.southBlockZ() + 1.0D) - cal.northBlockZ());
+        int viewH = Math.max(1, height - TOP_BAR_H - BOTTOM_BAR_H);
+        double coverZoom = Math.max((double) width / spanX, (double) viewH / spanZ);
+        return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, coverZoom));
+    }
+
+    /**
+     * Strictly locks both zoom and camera center inside the configured Earth map bounds so
+     * out-of-bounds void space can never enter the viewport.
+     */
+    private void clampCamera() {
+        if (width <= 0 || height <= TOP_BAR_H + BOTTOM_BAR_H) return;
+        pixelsPerBlock = clampZoom(pixelsPerBlock);
+        ClientMapState state = ClientMapState.INSTANCE;
+        if (!state.settings().lockCameraToBounds()) return;
+
+        MapCalibration cal = state.calibration();
+        double mapMinX = cal.westBlockX();
+        double mapMaxX = cal.eastBlockX() + 1.0D;
+        double mapMinZ = cal.northBlockZ();
+        double mapMaxZ = cal.southBlockZ() + 1.0D;
+
+        int viewH = Math.max(1, height - TOP_BAR_H - BOTTOM_BAR_H);
+        double halfW = (width * 0.5D) / pixelsPerBlock;
+        double halfH = (viewH * 0.5D) / pixelsPerBlock;
+
+        double minCx = mapMinX + halfW;
+        double maxCx = mapMaxX - halfW;
+        centerX = minCx <= maxCx
+                ? Math.max(minCx, Math.min(maxCx, centerX))
+                : (mapMinX + mapMaxX) * 0.5D;
+
+        double minCz = mapMinZ + halfH;
+        double maxCz = mapMaxZ - halfH;
+        centerZ = minCz <= maxCz
+                ? Math.max(minCz, Math.min(maxCz, centerZ))
+                : (mapMinZ + mapMaxZ) * 0.5D;
     }
 
     private double mapCenterScreenY() {
@@ -385,6 +480,7 @@ public final class PoliticalMapScreen extends Screen {
         ClientMapState state = ClientMapState.INSTANCE;
         state.tiles.beginFrame();
         nationLabelBoxes.clear();
+        flagHitBoxes.clear();
 
         int viewTop = TOP_BAR_H;
         int viewBottom = height - BOTTOM_BAR_H;
@@ -399,12 +495,27 @@ public final class PoliticalMapScreen extends Screen {
             return;
         }
 
+        clampCamera();
+        MapCalibration cal = state.calibration();
+        boolean locked = state.settings().lockCameraToBounds();
+
         int minBlockX = (int) Math.floor(screenToWorldX(0)) - 16;
         int maxBlockX = (int) Math.ceil(screenToWorldX(width)) + 16;
         int minBlockZ = (int) Math.floor(screenToWorldZ(viewTop)) - 16;
         int maxBlockZ = (int) Math.ceil(screenToWorldZ(viewBottom)) + 16;
+        if (locked) {
+            minBlockX = Math.max(cal.westBlockX(), minBlockX);
+            maxBlockX = Math.min(cal.eastBlockX(), maxBlockX);
+            minBlockZ = Math.max(cal.northBlockZ(), minBlockZ);
+            maxBlockZ = Math.min(cal.southBlockZ(), maxBlockZ);
+        }
 
-        g.enableScissor(0, viewTop, width, viewBottom);
+        int clipX0 = locked ? Math.max(0, Math.round(worldToScreenX(cal.westBlockX()))) : 0;
+        int clipY0 = locked ? Math.max(viewTop, Math.round(worldToScreenY(cal.northBlockZ()))) : viewTop;
+        int clipX1 = locked ? Math.min(width, Math.round(worldToScreenX(cal.eastBlockX() + 1))) : width;
+        int clipY1 = locked ? Math.min(viewBottom, Math.round(worldToScreenY(cal.southBlockZ() + 1))) : viewBottom;
+
+        g.enableScissor(clipX0, clipY0, Math.max(clipX0, clipX1), Math.max(clipY0, clipY1));
 
         // LAYER 1: Terrain Layer (streamed multi-LOD tiles + nautical strategic graticule)
         renderTerrainLayer(g, state, minBlockX, minBlockZ, maxBlockX, maxBlockZ);
@@ -412,7 +523,10 @@ public final class PoliticalMapScreen extends Screen {
         List<RegionMesh> visibleMeshes = state.visibleRegions(minBlockX, minBlockZ, maxBlockX, maxBlockZ);
 
         // LAYER 2: Political Layer (sovereign & independent territory fills)
-        renderPoliticalLayer(g, visibleMeshes);
+        renderPoliticalLayer(g, state, visibleMeshes);
+
+        // LAYER 2B: War Occupation & Active Capture Flag Layer (v11.0.0)
+        renderWarOverlayLayer(g, state, minBlockX, minBlockZ, maxBlockX, maxBlockZ);
 
         // LAYER 3: Nation Border Layer (thick sovereign borders)
         if (showNationBorders) {
@@ -432,11 +546,13 @@ public final class PoliticalMapScreen extends Screen {
 
         g.disableScissor();
 
-        // Search dropdown & Right-Click Town Info Card
+        // Search dropdown & Right-Click Town Info / OP Teleport Card
         renderTopAndBottomChrome(g, mx, my, state);
         super.render(g, mx, my, partialTick);
         renderSearchDropdown(g, mx, my);
         renderTownPopup(g, mx, my, state);
+        renderCoordPopup(g, mx, my, state);
+        renderFlagPopup(g, mx, my, state);
     }
 
     private void renderTerrainLayer(GuiGraphics g, ClientMapState state, int minBx, int minBz, int maxBx, int maxBz) {
@@ -468,7 +584,7 @@ public final class PoliticalMapScreen extends Screen {
 
         // Stream & blit visible tiles
         long tileSpan = (long) (maxTx - minTx + 1) * (long) (maxTz - minTz + 1);
-        if (tileSpan <= 600) {
+        if (tileSpan <= 2500) {
             Matrix4f pose = g.pose().last().pose();
             RenderSystem.enableBlend();
             RenderSystem.defaultBlendFunc();
@@ -490,24 +606,69 @@ public final class PoliticalMapScreen extends Screen {
                     if (sx1 < 0 || sx0 > width) continue;
 
                     TileSlice slice = state.tiles.resolveOrRequest(lod, tx, tz);
-                    if (slice == null) continue;
-
-                    RenderSystem.setShaderTexture(0, slice.texture());
-                    BufferBuilder bb = Tesselator.getInstance().getBuilder();
-                    bb.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
-                    bb.vertex(pose, sx0, sy1, 0f).uv(slice.u0(), slice.v1()).endVertex();
-                    bb.vertex(pose, sx1, sy1, 0f).uv(slice.u1(), slice.v1()).endVertex();
-                    bb.vertex(pose, sx1, sy0, 0f).uv(slice.u1(), slice.v0()).endVertex();
-                    bb.vertex(pose, sx0, sy0, 0f).uv(slice.u0(), slice.v0()).endVertex();
-                    Tesselator.getInstance().end();
+                    if (slice != null) {
+                        blitTileQuad(pose, slice.texture(), sx0, sy0, sx1, sy1, slice.u0(), slice.v0(), slice.u1(), slice.v1());
+                    } else if (lod > 0) {
+                        blitLoadedChildrenFallback(pose, state, lod, tx, tz, wx0, wz0, bpt);
+                    }
                 }
             }
             RenderSystem.disableBlend();
         }
 
+        // Warm planetary root z7 tiles with any remaining request budget so World View is always ready
+        state.tiles.preloadWorldOverview(cal);
+
         // World border outline
         if (bx1 - bx0 >= 4 && bz1 - bz0 >= 4) {
             drawClippedRectOutline(g, bx0, bz0, bx1, bz1, 1, 0x5571654C);
+        }
+    }
+
+    private static void blitTileQuad(Matrix4f pose, ResourceLocation texture,
+                                     float sx0, float sy0, float sx1, float sy1,
+                                     float u0, float v0, float u1, float v1) {
+        RenderSystem.setShaderTexture(0, texture);
+        BufferBuilder bb = Tesselator.getInstance().getBuilder();
+        bb.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
+        bb.vertex(pose, sx0, sy1, 0f).uv(u0, v1).endVertex();
+        bb.vertex(pose, sx1, sy1, 0f).uv(u1, v1).endVertex();
+        bb.vertex(pose, sx1, sy0, 0f).uv(u1, v0).endVertex();
+        bb.vertex(pose, sx0, sy0, 0f).uv(u0, v0).endVertex();
+        Tesselator.getInstance().end();
+    }
+
+    /**
+     * When zooming out from Regional View into World View before a coarser LOD tile finishes streaming,
+     * renders any already-cached child tiles (lod-1 or lod-2) so terrain never disappears during zoom.
+     */
+    private void blitLoadedChildrenFallback(Matrix4f pose, ClientMapState state, int lod, int tx, int tz,
+                                            double wx0, double wz0, int bpt) {
+        for (int step = 1; step <= 2 && lod - step >= MapCalibration.MIN_LOD; step++) {
+            int childLod = lod - step;
+            int grid = 1 << step;
+            double childBpt = (double) bpt / grid;
+            int baseChildTx = tx * grid;
+            int baseChildTz = tz * grid;
+            boolean drewAny = false;
+            for (int dz = 0; dz < grid; dz++) {
+                double cwz0 = wz0 + dz * childBpt;
+                float csy0 = worldToScreenY(cwz0);
+                float csy1 = worldToScreenY(cwz0 + childBpt);
+                if (csy1 < TOP_BAR_H || csy0 > height - BOTTOM_BAR_H) continue;
+                for (int dx = 0; dx < grid; dx++) {
+                    double cwx0 = wx0 + dx * childBpt;
+                    float csx0 = worldToScreenX(cwx0);
+                    float csx1 = worldToScreenX(cwx0 + childBpt);
+                    if (csx1 < 0 || csx0 > width) continue;
+                    ResourceLocation tex = state.tiles.peekLoaded(childLod, baseChildTx + dx, baseChildTz + dz);
+                    if (tex != null) {
+                        blitTileQuad(pose, tex, csx0, csy0, csx1, csy1, 0f, 0f, 1f, 1f);
+                        drewAny = true;
+                    }
+                }
+            }
+            if (drewAny) return;
         }
     }
 
@@ -536,9 +697,11 @@ public final class PoliticalMapScreen extends Screen {
         }
     }
 
-    private void renderPoliticalLayer(GuiGraphics g, List<RegionMesh> meshes) {
+    private void renderPoliticalLayer(GuiGraphics g, ClientMapState state, List<RegionMesh> meshes) {
         boolean terrainMode = mapMode == TerritoryConfig.MapMode.TERRAIN;
+        boolean warMode = mapMode == TerritoryConfig.MapMode.WAR;
         int baseAlpha = terrainMode ? 0x1E : 0x78; // Semi-transparent so terrain geography shines through
+        int minPx = pixelsPerBlock < 0.12D ? 2 : 1;
 
         for (RegionMesh rm : meshes) {
             for (FillRect rect : rm.fills) {
@@ -548,14 +711,136 @@ public final class PoliticalMapScreen extends Screen {
 
                 int x0 = Math.round(worldToScreenX(rect.minBlockX()));
                 int y0 = Math.round(worldToScreenY(rect.minBlockZ()));
-                int x1 = Math.max(x0 + 1, Math.round(worldToScreenX(rect.maxBlockX())));
-                int y1 = Math.max(y0 + 1, Math.round(worldToScreenY(rect.maxBlockZ())));
+                int x1 = Math.max(x0 + minPx, Math.round(worldToScreenX(rect.maxBlockX())));
+                int y1 = Math.max(y0 + minPx, Math.round(worldToScreenY(rect.maxBlockZ())));
                 if (x1 < 0 || x0 > width || y1 < TOP_BAR_H || y0 > height - BOTTOM_BAR_H) continue;
 
-                int alpha = isHighlighted ? 0xB4 : baseAlpha;
-                int argb = (alpha << 24) | (rect.colorRgb() & 0xFFFFFF);
+                int alpha;
+                int rgb = rect.colorRgb() & 0xFFFFFF;
+                if (isHighlighted) {
+                    alpha = 0xB4;
+                } else if (warMode) {
+                    if (state.isNationAtWar(rect.nationId())) {
+                        alpha = 0x8E;
+                    } else {
+                        alpha = 0x2E;
+                        rgb = darken(rgb, 36);
+                    }
+                } else {
+                    alpha = baseAlpha;
+                }
+                int argb = (alpha << 24) | rgb;
                 g.fill(x0, y0, x1, y1, argb);
             }
+        }
+    }
+
+    /**
+     * Renders occupied chunks (diagonal stripes in Occupying Nation color + dashed occupation border)
+     * and active War Capture Flags (pulsing crimson zone + clickable battle icon).
+     */
+    private void renderWarOverlayLayer(GuiGraphics g, ClientMapState state, int minBx, int minBz, int maxBx, int maxBz) {
+        if (!state.enableOccupationOverlay() && mapMode != TerritoryConfig.MapMode.WAR) return;
+        int minCx = minBx >> 4;
+        int maxCx = maxBx >> 4;
+        int minCz = minBz >> 4;
+        int maxCz = maxBz >> 4;
+        int minPx = pixelsPerBlock < 0.12D ? 2 : 1;
+
+        // 1. Occupied Chunks (diagonal hatching + dashed border so occupation != permanent annexation)
+        for (var occ : state.occupations()) {
+            if (occ.chunkX() < minCx || occ.chunkX() > maxCx || occ.chunkZ() < minCz || occ.chunkZ() > maxCz) continue;
+            int bx0 = occ.chunkX() * 16;
+            int bz0 = occ.chunkZ() * 16;
+            int x0 = Math.round(worldToScreenX(bx0));
+            int y0 = Math.round(worldToScreenY(bz0));
+            int x1 = Math.max(x0 + minPx, Math.round(worldToScreenX(bx0 + 16)));
+            int y1 = Math.max(y0 + minPx, Math.round(worldToScreenY(bz0 + 16)));
+            if (x1 < 0 || x0 > width || y1 < TOP_BAR_H || y0 > height - BOTTOM_BAR_H) continue;
+
+            NationSummary occNat = state.nation(occ.occupyingNationId());
+            int occRgb = occNat != null ? occNat.colorRgb() : 0xD4553E;
+            int stripeArgb = 0xCC000000 | brighten(occRgb, 20);
+
+            int spanW = x1 - x0;
+            int spanH = y1 - y0;
+            if (spanW >= 5 && spanH >= 5) {
+                // Diagonal stepped hatching stripes inside the occupied chunk
+                int step = Math.max(3, Math.min(6, spanW / 3));
+                for (int py = y0; py < y1; py++) {
+                    for (int px = x0; px < x1; px++) {
+                        if (Math.floorMod((px - x0) + (py - y0), step) < 2) {
+                            g.fill(px, py, px + 1, py + 1, stripeArgb);
+                        }
+                    }
+                }
+                // Dashed outer occupation border where adjacent chunk is not occupied by the same nation
+                int dashArgb = 0xEE000000 | brighten(occRgb, 48);
+                var north = state.occupationAtChunk(occ.chunkX(), occ.chunkZ() - 1);
+                var south = state.occupationAtChunk(occ.chunkX(), occ.chunkZ() + 1);
+                var west = state.occupationAtChunk(occ.chunkX() - 1, occ.chunkZ());
+                var east = state.occupationAtChunk(occ.chunkX() + 1, occ.chunkZ());
+                if (north == null || !Objects.equals(north.occupyingNationId(), occ.occupyingNationId())) {
+                    drawDashedHorizontal(g, x0, x1, y0, dashArgb);
+                }
+                if (south == null || !Objects.equals(south.occupyingNationId(), occ.occupyingNationId())) {
+                    drawDashedHorizontal(g, x0, x1, y1 - 1, dashArgb);
+                }
+                if (west == null || !Objects.equals(west.occupyingNationId(), occ.occupyingNationId())) {
+                    drawDashedVertical(g, x0, y0, y1, dashArgb);
+                }
+                if (east == null || !Objects.equals(east.occupyingNationId(), occ.occupyingNationId())) {
+                    drawDashedVertical(g, x1 - 1, y0, y1, dashArgb);
+                }
+            } else {
+                g.fill(x0, y0, x1, y1, stripeArgb);
+            }
+        }
+
+        // 2. Active Capture Flags (crimson frontline highlight + clickable battle icon)
+        boolean pulse = ((System.currentTimeMillis() / 450L) & 1L) == 0L;
+        for (var flag : state.activeFlags()) {
+            int cbx = flag.chunkX() * 16;
+            int cbz = flag.chunkZ() * 16;
+            int cx0 = Math.round(worldToScreenX(cbx));
+            int cy0 = Math.round(worldToScreenY(cbz));
+            int cx1 = Math.max(cx0 + 2, Math.round(worldToScreenX(cbx + 16)));
+            int cy1 = Math.max(cy0 + 2, Math.round(worldToScreenY(cbz + 16)));
+            if (cx1 >= 0 && cx0 <= width && cy1 >= TOP_BAR_H && cy0 <= height - BOTTOM_BAR_H) {
+                g.fill(cx0, cy0, cx1, cy1, pulse ? 0x55FF3B3B : 0x33FF3B3B);
+                drawClippedRectOutline(g, cx0, cy0, cx1, cy1, 1, pulse ? 0xFFFF5E5E : 0xFFCC3333);
+            }
+
+            int fx = Math.round(worldToScreenX(flag.blockX() + 0.5D));
+            int fy = Math.round(worldToScreenY(flag.blockZ() + 0.5D));
+            if (fx < -12 || fx > width + 12 || fy < TOP_BAR_H - 12 || fy > height - BOTTOM_BAR_H + 12) continue;
+
+            int half = 6;
+            g.fill(fx - half, fy - half, fx + half + 1, fy + half + 1, 0xF01C1414);
+            g.renderOutline(fx - half, fy - half, half * 2 + 1, half * 2 + 1,
+                    Objects.equals(selectedFlagId, flag.flagId()) ? GOLD : 0xFFFF5E5E);
+            g.drawCenteredString(font, "⚔", fx, fy - 4, pulse ? 0xFFFF7A7A : GOLD);
+
+            // Mini capture progress bar directly below the icon
+            int barW = 14;
+            int fillW = Math.round((flag.progressPct() / 100.0F) * barW);
+            g.fill(fx - barW / 2, fy + half + 2, fx + barW / 2, fy + half + 4, 0xCC111618);
+            if (fillW > 0) {
+                g.fill(fx - barW / 2, fy + half + 2, fx - barW / 2 + fillW, fy + half + 4, 0xFFFF5252);
+            }
+            flagHitBoxes.add(new FlagHitBox(fx - half - 2, fy - half - 2, fx + half + 2, fy + half + 5, flag.flagId()));
+        }
+    }
+
+    private static void drawDashedHorizontal(GuiGraphics g, int x0, int x1, int y, int argb) {
+        for (int x = x0; x < x1; x += 4) {
+            g.fill(x, y, Math.min(x1, x + 2), y + 1, argb);
+        }
+    }
+
+    private static void drawDashedVertical(GuiGraphics g, int x, int y0, int y1, int argb) {
+        for (int y = y0; y < y1; y += 4) {
+            g.fill(x, y, x + 1, Math.min(y1, y + 2), argb);
         }
     }
 
@@ -642,6 +927,8 @@ public final class PoliticalMapScreen extends Screen {
         int maxLabels = s.maxVisibleLabels();
         List<ScreenBox> occupied = new ArrayList<>();
         int placed = 0;
+        var focused = state.label(highlightedTownId);
+        if (focused != null && s.showTownNames() && drawTownLabel(g, state, focused, occupied, true)) placed++;
 
         // 1. Nation Names (World & Regional views; subtle header at Close view)
         if (s.showNationNames() && pixelsPerBlock <= 1.8D) {
@@ -680,66 +967,39 @@ public final class PoliticalMapScreen extends Screen {
             }
         }
 
-        // 2. Town Markers, Capital Emblems & Town Names (Regional & Close views)
-        if (s.showTownNames() && pixelsPerBlock >= 0.10D) {
-            List<TownSummary> visibleTowns = new ArrayList<>();
-            for (TownSummary t : state.towns()) {
-                if (!t.hasClaims()) continue;
-                if (t.homeBlockX() < minBx - 64 || t.homeBlockX() > maxBx + 64
-                        || t.homeBlockZ() < minBz - 64 || t.homeBlockZ() > maxBz + 64) {
-                    continue;
-                }
-                visibleTowns.add(t);
-            }
-            // Capitals first, then higher claim count, then population
-            visibleTowns.sort((a, b) -> {
-                boolean capA = isCapital(state, a);
-                boolean capB = isCapital(state, b);
-                if (capA != capB) return capA ? -1 : 1;
-                int c = Integer.compare(b.claimCount(), a.claimCount());
-                return c != 0 ? c : Integer.compare(b.population(), a.population());
-            });
-
-            for (TownSummary t : visibleTowns) {
-                if (placed >= maxLabels) break;
-                boolean capital = isCapital(state, t);
-                // At outer regional zoom (0.10..0.22), prioritize capitals and larger settlements
-                if (pixelsPerBlock < 0.20D && !capital && t.claimCount() < 3 && visibleTowns.size() > 25) {
-                    continue;
-                }
-
-                int sx = Math.round(worldToScreenX(t.homeBlockX()));
-                int sy = Math.round(worldToScreenY(t.homeBlockZ()));
-                if (sx < 8 || sx > width - 8 || sy < TOP_BAR_H + 8 || sy > height - BOTTOM_BAR_H - 8) continue;
-
-                // Draw town dot / capital badge
-                if (capital) {
-                    g.fill(sx - 3, sy - 3, sx + 4, sy + 4, 0xFF141A1C);
-                    g.fill(sx - 2, sy - 2, sx + 3, sy + 3, GOLD);
-                } else {
-                    g.fill(sx - 2, sy - 2, sx + 2, sy + 2, 0xFF141A1C);
-                    g.fill(sx - 1, sy - 1, sx + 1, sy + 1, CREAM);
-                }
-
-                String name = (capital ? "★ " : "") + t.name().toUpperCase(Locale.ROOT);
-                float scale = pixelsPerBlock >= 0.75D ? 0.90f : 0.78f;
-                int tw = Math.round(font.width(name) * scale) + 6;
-                int th = Math.round(9 * scale) + 2;
-                ScreenBox box = new ScreenBox(sx - tw / 2, sy + 4, sx + tw / 2, sy + 4 + th);
-                if (collides(box, occupied)) continue;
-
-                occupied.add(box);
-                placed++;
-
-                g.pose().pushPose();
-                g.pose().translate(sx, sy + 5, 0f);
-                g.pose().scale(scale, scale, 1f);
-                int lw = font.width(name);
-                g.fill(-lw / 2 - 2, -1, lw / 2 + 2, 9, 0x88141B1E);
-                g.drawString(font, name, -lw / 2, 0, capital ? GOLD : 0xFFDAD5C8, true);
-                g.pose().popPose();
-            }
+        if (!s.showTownNames()) return;
+        int minimum = pixelsPerBlock < 0.10 ? 5 : pixelsPerBlock < 0.75 ? 3 : 1;
+        for (var label : state.labels()) {
+            if (placed >= maxLabels || label.town().level() < minimum) break;
+            if (label != focused && drawTownLabel(g, state, label, occupied, false)) placed++;
         }
+    }
+
+    private static final int[] LEVEL_COLORS = {0, 0xffa5aaad, 0xffb8deb0, 0xffead69b, 0xffffb55a, 0xffffdc60};
+    private boolean drawTownLabel(GuiGraphics g, ClientMapState state, ClientMapState.TownLabel label,
+                                  List<ScreenBox> occupied, boolean focused) {
+        var t = label.town();
+        int sx = Math.round(worldToScreenX(t.homeBlockX())), sy = Math.round(worldToScreenY(t.homeBlockZ()));
+        if (sx < 0 || sx > width || sy < TOP_BAR_H || sy >= height - BOTTOM_BAR_H - 15) return false;
+        float scale = 0.58f + t.level() * 0.13f;
+        int lw = font.width(label.text()), tw = Math.round((lw+8)*scale);
+        int left = Math.max(2,Math.min(width-tw-2,sx-tw/2)), top = sy+5;
+        var box = new ScreenBox(left, top-2, left+tw, top+(int)Math.ceil(11*scale));
+        if (collides(box, occupied)) return false;
+        occupied.add(box);
+        g.fill(sx-2,sy-2,sx+2,sy+2,isCapital(state,t)?GOLD:LEVEL_COLORS[t.level()]);
+        g.pose().pushPose();
+        g.pose().translate(left+tw/2f,top,0); g.pose().scale(scale,scale,1);
+        g.fill(-lw/2-3,-1,(lw+1)/2+3,10,focused?0xee3a4038:0x99151b1c);
+        if (t.level()>=4) {
+            int radius=t.level()==5?2:1;
+            for(int dx=-1;dx<=1;dx++) for(int dy=-1;dy<=1;dy++)
+                if(dx!=0 || dy!=0) g.drawString(font,label.text(),-lw/2+dx*radius,dy*radius,0xff322819,false);
+        }
+        g.drawString(font,label.text(),-lw/2,0,LEVEL_COLORS[t.level()],t.level()>1 && t.level()<4);
+        if(focused) g.fill(-lw/2-2,9,(lw+1)/2+2,10,GOLD);
+        g.pose().popPose();
+        return true;
     }
 
     private void renderPlayerLocationLayer(GuiGraphics g, ClientMapState state) {
@@ -749,6 +1009,16 @@ public final class PoliticalMapScreen extends Screen {
             drawClippedRectOutline(g, mx - 6, my - 6, mx + 7, my + 7, 1, GOLD);
             g.fill(mx - 1, my - 9, mx + 2, my + 10, 0xAAFFE082);
             g.fill(mx - 9, my - 1, mx + 10, my + 2, 0xAAFFE082);
+        }
+
+        if (coordPopupOpen || popupTownId != null) {
+            int rx = Math.round(worldToScreenX(popupCoordX + 0.5D));
+            int ry = Math.round(worldToScreenY(popupCoordZ + 0.5D));
+            if (rx >= -8 && rx <= width + 8 && ry >= TOP_BAR_H - 8 && ry <= height - BOTTOM_BAR_H + 8) {
+                drawClippedRectOutline(g, rx - 4, ry - 4, rx + 5, ry + 5, 1, GOLD);
+                g.fill(rx - 1, ry - 6, rx + 2, ry + 7, 0xBBFFE082);
+                g.fill(rx - 6, ry - 1, rx + 7, ry + 2, 0xBBFFE082);
+            }
         }
 
         if (minecraft == null || minecraft.player == null) return;
@@ -879,8 +1149,28 @@ public final class PoliticalMapScreen extends Screen {
                 font.width(nationHeader) + 16,
                 Math.max(font.width(townTitle) + 16, Math.max(font.width(lineMayor), font.width(lineStatus)) + 16)
         ));
-        popupW = Math.min(250, contentW);
-        popupH = 112;
+        var occ = state.occupationAtChunk(popupCoordX >> 4, popupCoordZ >> 4);
+        String lineOccNation = null;
+        String lineOccStatus = null;
+        String lineOccWar = null;
+        popupWarId = null;
+        if (occ != null) {
+            NationSummary occNat = state.nation(occ.occupyingNationId());
+            String occNatName = occNat != null ? occNat.name() : "?";
+            lineOccNation = Component.translatable("hn.map.popup_occupying_nation", occNatName).getString();
+            lineOccStatus = Component.translatable("hn.map.popup_occ_status").getString();
+            lineOccWar = Component.translatable("hn.map.popup_war_info", occ.warTitle()).getString();
+            popupWarId = occ.warId();
+            contentW = Math.max(contentW, Math.max(font.width(lineOccNation), font.width(lineOccWar)) + 16);
+        }
+
+        popupW = Math.min(256, contentW);
+        boolean canEval = minecraft != null && minecraft.player != null && minecraft.player.hasPermissions(4);
+        boolean canTp = isOpPlayer();
+        boolean showPeaceBtn = popupWarId != null;
+        int extraButtons = (canEval ? 1 : 0) + (canTp ? 1 : 0) + (showPeaceBtn ? 1 : 0);
+        int occExtraH = occ != null ? 38 : 0;
+        popupH = 148 + occExtraH + extraButtons * 20;
         popupHeaderH = 18;
 
         // Clamp strictly inside viewport so the card never overflows screen edges
@@ -906,7 +1196,7 @@ public final class PoliticalMapScreen extends Screen {
         g.drawString(font, trimmedHeader, clampedX + 6, clampedY + 5, CREAM, true);
 
         int ty = clampedY + popupHeaderH + 6;
-        g.drawString(font, font.plainSubstrByWidth(townTitle, popupW - 12), clampedX + 6, ty, GOLD, false);
+        g.drawString(font, font.plainSubstrByWidth(townTitle, popupW - 12), clampedX + 6, ty, LEVEL_COLORS[town.level()], false);
         ty += 13;
         g.fill(clampedX + 6, ty - 2, clampedX + popupW - 6, ty - 1, 0x5571654C);
         g.drawString(font, font.plainSubstrByWidth(lineMayor, popupW - 12), clampedX + 6, ty + 1, CREAM, false);
@@ -917,9 +1207,25 @@ public final class PoliticalMapScreen extends Screen {
         ty += 12;
         g.drawString(font, font.plainSubstrByWidth(lineStatus, popupW - 12), clampedX + 6, ty + 1, MUTED, false);
 
+        Component development = Component.translatable("hn.panel.level_"+town.level());
+        Component score = town.score()<0 ? Component.translatable("hn.panel.unevaluated") : Component.literal(town.score()+"/100");
+        Component rating = town.rating()==0 ? Component.translatable("hn.panel.unrated")
+                : Component.literal(dev.zeorez.historicalnations.core.CityEvaluation.stars(town.rating()));
+        g.drawString(font, Component.translatable("hn.panel.map_level",development,town.level()), clampedX+6, ty+13, CREAM,false);
+        g.drawString(font, Component.translatable("hn.panel.map_score",score), clampedX+6, ty+25, CREAM,false);
+        g.drawString(font, Component.translatable("hn.panel.final_rating",rating), clampedX+6, ty+37, GOLD,false);
+
+        if (occ != null) {
+            int oy = ty + 50;
+            g.fill(clampedX + 6, oy - 2, clampedX + popupW - 6, oy - 1, 0x66C44536);
+            g.drawString(font, font.plainSubstrByWidth(lineOccStatus, popupW - 12), clampedX + 6, oy + 1, 0xFFFF7A6B, false);
+            g.drawString(font, font.plainSubstrByWidth(lineOccNation, popupW - 12), clampedX + 6, oy + 13, GOLD, false);
+            g.drawString(font, font.plainSubstrByWidth(lineOccWar, popupW - 12), clampedX + 6, oy + 25, MUTED, false);
+        }
+
         // [VIEW TOWN] button
         viewTownBtnX = clampedX + 6;
-        viewTownBtnY = clampedY + popupH - 21;
+        viewTownBtnY = clampedY + popupH - (21 + extraButtons * 20);
         viewTownBtnW = popupW - 12;
         viewTownBtnH = 16;
         boolean hoverBtn = mx >= viewTownBtnX && mx < viewTownBtnX + viewTownBtnW
@@ -928,11 +1234,180 @@ public final class PoliticalMapScreen extends Screen {
                 hoverBtn ? 0xFF425150 : 0xFF2B3538);
         g.renderOutline(viewTownBtnX, viewTownBtnY, viewTownBtnW, viewTownBtnH, hoverBtn ? GOLD : BORDER);
         g.drawCenteredString(font, viewBtnLabel, viewTownBtnX + viewTownBtnW / 2, viewTownBtnY + 4, GOLD);
+
+        int nextBtnY = viewTownBtnY + 20;
+        peaceBtnY = -1;
+        if (showPeaceBtn) {
+            peaceBtnY = nextBtnY;
+            boolean hovPeace = mx >= viewTownBtnX && mx < viewTownBtnX + viewTownBtnW
+                    && my >= peaceBtnY && my < peaceBtnY + 16;
+            g.fill(viewTownBtnX, peaceBtnY, viewTownBtnX + viewTownBtnW, peaceBtnY + 16,
+                    hovPeace ? 0xFF4B3735 : 0xFF392826);
+            g.renderOutline(viewTownBtnX, peaceBtnY, viewTownBtnW, 16, hovPeace ? GOLD : 0xFFB85A4F);
+            g.drawCenteredString(font, Component.translatable("hn.war.peace_btn"),
+                    viewTownBtnX + viewTownBtnW / 2, peaceBtnY + 4, GOLD);
+            nextBtnY += 20;
+        }
+        evalCityBtnY = -1;
+        if (canEval) {
+            evalCityBtnY = nextBtnY;
+            boolean hovEval = mx >= viewTownBtnX && mx < viewTownBtnX + viewTownBtnW
+                    && my >= evalCityBtnY && my < evalCityBtnY + 16;
+            g.fill(viewTownBtnX, evalCityBtnY, viewTownBtnX + viewTownBtnW, evalCityBtnY + 16,
+                    hovEval ? 0xFF56503C : 0xFF474232);
+            g.renderOutline(viewTownBtnX, evalCityBtnY, viewTownBtnW, 16, hovEval ? GOLD : BORDER);
+            g.drawCenteredString(font, Component.translatable("hn.panel.evaluate_city"),
+                    viewTownBtnX + viewTownBtnW / 2, evalCityBtnY + 4, GOLD);
+            nextBtnY += 20;
+        }
+        if (canTp) {
+            teleportBtnX = viewTownBtnX;
+            teleportBtnY = nextBtnY;
+            teleportBtnW = viewTownBtnW;
+            teleportBtnH = 16;
+            boolean hovTp = mx >= teleportBtnX && mx < teleportBtnX + teleportBtnW
+                    && my >= teleportBtnY && my < teleportBtnY + teleportBtnH;
+            g.fill(teleportBtnX, teleportBtnY, teleportBtnX + teleportBtnW, teleportBtnY + teleportBtnH,
+                    hovTp ? 0xFF2D4A3E : 0xFF21362E);
+            g.renderOutline(teleportBtnX, teleportBtnY, teleportBtnW, teleportBtnH, hovTp ? 0xFF63E2B7 : GOLD);
+            g.drawCenteredString(font, tr("teleport_here"),
+                    teleportBtnX + teleportBtnW / 2, teleportBtnY + 4, 0xFF8FF0CA);
+        } else {
+            teleportBtnW = 0;
+            teleportBtnH = 0;
+        }
+    }
+
+    private void renderCoordPopup(GuiGraphics g, int mx, int my, ClientMapState state) {
+        if (!coordPopupOpen || popupTownId != null) return;
+        if (!isOpPlayer()) {
+            coordPopupOpen = false;
+            return;
+        }
+
+        String header = tr("coord_header").getString().toUpperCase(Locale.ROOT);
+        String lineCoords = String.format(Locale.ROOT, "X: %d   Z: %d", popupCoordX, popupCoordZ);
+        String geo = state.calibration().formatGeo(popupCoordX, popupCoordZ);
+        String lineSub = String.format(Locale.ROOT, "Chunk: [%d, %d]%s",
+                popupCoordX >> 4, popupCoordZ >> 4, geo.isEmpty() ? "" : " • " + geo);
+        String tpLabel = tr("teleport_here").getString();
+
+        int contentW = Math.max(158, Math.max(
+                font.width(header) + 16,
+                Math.max(font.width(lineCoords) + 16, Math.max(font.width(lineSub) + 16, font.width(tpLabel) + 28))
+        ));
+        popupW = Math.min(250, contentW);
+        popupH = 70;
+        popupHeaderH = 18;
+
+        int clampedX = Math.max(8, Math.min(width - popupW - 8, popupX));
+        int clampedY = Math.max(TOP_BAR_H + 6, Math.min(height - BOTTOM_BAR_H - popupH - 6, popupY));
+        popupX = clampedX;
+        popupY = clampedY;
+
+        g.fill(clampedX + 3, clampedY + 3, clampedX + popupW + 3, clampedY + popupH + 3, 0x88000000);
+        g.fill(clampedX, clampedY, clampedX + popupW, clampedY + popupH, CARD_BG);
+        g.fill(clampedX + 1, clampedY + 1, clampedX + popupW - 1, clampedY + popupHeaderH, 0xFF233036);
+        g.fill(clampedX + 1, clampedY + popupHeaderH, clampedX + popupW - 1, clampedY + popupHeaderH + 1, GOLD);
+        g.renderOutline(clampedX, clampedY, popupW, popupH, BORDER);
+
+        g.drawString(font, font.plainSubstrByWidth(header, popupW - 12), clampedX + 6, clampedY + 5, GOLD, true);
+        g.drawString(font, font.plainSubstrByWidth(lineCoords, popupW - 12), clampedX + 6, clampedY + popupHeaderH + 5, CREAM, false);
+        g.drawString(font, font.plainSubstrByWidth(lineSub, popupW - 12), clampedX + 6, clampedY + popupHeaderH + 17, MUTED, false);
+
+        teleportBtnX = clampedX + 6;
+        teleportBtnY = clampedY + popupH - 21;
+        teleportBtnW = popupW - 12;
+        teleportBtnH = 16;
+        boolean hovTp = mx >= teleportBtnX && mx < teleportBtnX + teleportBtnW
+                && my >= teleportBtnY && my < teleportBtnY + teleportBtnH;
+        g.fill(teleportBtnX, teleportBtnY, teleportBtnX + teleportBtnW, teleportBtnY + teleportBtnH,
+                hovTp ? 0xFF2D4A3E : 0xFF21362E);
+        g.renderOutline(teleportBtnX, teleportBtnY, teleportBtnW, teleportBtnH, hovTp ? 0xFF63E2B7 : GOLD);
+        g.drawCenteredString(font, tpLabel, teleportBtnX + teleportBtnW / 2, teleportBtnY + 4, 0xFF8FF0CA);
+    }
+
+    private void renderFlagPopup(GuiGraphics g, int mx, int my, ClientMapState state) {
+        if (selectedFlagId == null) return;
+        dev.zeorez.historicalnations.war.WarModels.MapFlagOverlay flag = null;
+        for (var f : state.activeFlags()) {
+            if (f.flagId().equals(selectedFlagId)) {
+                flag = f;
+                break;
+            }
+        }
+        if (flag == null) {
+            selectedFlagId = null;
+            return;
+        }
+
+        NationSummary attNat = state.nation(flag.attackingNationId());
+        NationSummary defNat = state.nation(flag.defendingNationId());
+        TownSummary targetTown = state.town(flag.targetTownId());
+
+        String header = tr("flag_popup_header").getString().toUpperCase(Locale.ROOT);
+        String lineAtt = Component.translatable("hn.map.flag_attacker", attNat != null ? attNat.name() : "?").getString();
+        String lineDef = Component.translatable("hn.map.flag_defender",
+                defNat != null ? defNat.name() : tr("independent_header").getString()).getString();
+        String lineTown = Component.translatable("hn.map.flag_town", targetTown != null ? targetTown.name() : "?").getString();
+        String lineChunk = Component.translatable("hn.map.flag_chunk", flag.chunkX(), flag.chunkZ()).getString();
+        String lineProg = Component.translatable("hn.map.flag_progress", flag.progressPct(), flag.runState().name()).getString();
+        String mmss = String.format(Locale.ROOT, "%02d:%02d", flag.remainingSeconds() / 60, flag.remainingSeconds() % 60);
+        String lineRem = Component.translatable("hn.map.flag_remaining", mmss).getString();
+
+        int maxLine = Math.max(font.width(header), Math.max(font.width(lineAtt),
+                Math.max(font.width(lineDef), Math.max(font.width(lineTown), font.width(lineProg)))));
+        flagPopupW = Math.min(250, Math.max(176, maxLine + 16));
+        flagPopupH = 102;
+
+        int cx = Math.max(8, Math.min(width - flagPopupW - 8, flagPopupX));
+        int cy = Math.max(TOP_BAR_H + 6, Math.min(height - BOTTOM_BAR_H - flagPopupH - 6, flagPopupY));
+        flagPopupX = cx;
+        flagPopupY = cy;
+
+        g.fill(cx + 3, cy + 3, cx + flagPopupW + 3, cy + flagPopupH + 3, 0x88000000);
+        g.fill(cx, cy, cx + flagPopupW, cy + flagPopupH, CARD_BG);
+        g.fill(cx + 1, cy + 1, cx + flagPopupW - 1, cy + 18, 0xFF471E1E);
+        g.fill(cx + 1, cy + 18, cx + flagPopupW - 1, cy + 19, 0xFFFF5E5E);
+        g.renderOutline(cx, cy, flagPopupW, flagPopupH, BORDER);
+
+        g.drawString(font, font.plainSubstrByWidth(header, flagPopupW - 12), cx + 6, cy + 5, GOLD, true);
+        int ty = cy + 23;
+        g.drawString(font, font.plainSubstrByWidth(lineAtt, flagPopupW - 12), cx + 6, ty, 0xFFFF8F80, false);
+        g.drawString(font, font.plainSubstrByWidth(lineDef, flagPopupW - 12), cx + 6, ty + 12, CREAM, false);
+        g.drawString(font, font.plainSubstrByWidth(lineTown, flagPopupW - 12), cx + 6, ty + 24, CREAM, false);
+        g.drawString(font, font.plainSubstrByWidth(lineChunk, flagPopupW - 12), cx + 6, ty + 36, MUTED, false);
+        g.drawString(font, font.plainSubstrByWidth(lineProg, flagPopupW - 12), cx + 6, ty + 48, GOLD, false);
+        g.drawString(font, font.plainSubstrByWidth(lineRem, flagPopupW - 12), cx + 6, ty + 60, 0xFF8FF0CA, false);
+    }
+
+    private boolean isOpPlayer() {
+        return minecraft != null && minecraft.player != null && minecraft.player.hasPermissions(2);
+    }
+
+    private void triggerOpTeleport(int targetX, int targetZ) {
+        if (!isOpPlayer()) return;
+        MapNetwork.CHANNEL.sendToServer(new MapNetwork.MapTeleportPacket(targetX, targetZ));
+        popupTownId = null;
+        coordPopupOpen = false;
+        onClose();
     }
 
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
-        // 1. Check Town Info Popup clicks first so it stays crisp and interactive
+        // 1a. Check Unclaimed Coordinate OP Teleport Popup clicks
+        if (coordPopupOpen && popupTownId == null && button == 0
+                && mx >= popupX && mx < popupX + popupW
+                && my >= popupY && my < popupY + popupH) {
+            if (isOpPlayer() && teleportBtnW > 0
+                    && mx >= teleportBtnX && mx < teleportBtnX + teleportBtnW
+                    && my >= teleportBtnY && my < teleportBtnY + teleportBtnH) {
+                triggerOpTeleport(popupCoordX, popupCoordZ);
+            }
+            return true;
+        }
+
+        // 1b. Check Town Info Popup clicks first so it stays crisp and interactive
         if (popupTownId != null && button == 0
                 && mx >= popupX && mx < popupX + popupW
                 && my >= popupY && my < popupY + popupH) {
@@ -943,11 +1418,35 @@ public final class PoliticalMapScreen extends Screen {
                     PoliticalScreen.openDossier(View.TOWN, town.id(), this);
                     return true;
                 }
+                if (peaceBtnY > 0 && popupWarId != null
+                        && mx >= viewTownBtnX && mx < viewTownBtnX + viewTownBtnW
+                        && my >= peaceBtnY && my < peaceBtnY + 16) {
+                    PeaceTreatyScreen.requestOpen(popupWarId, this);
+                    return true;
+                }
+                if (evalCityBtnY > 0 && minecraft != null && minecraft.player != null && minecraft.player.hasPermissions(4)
+                        && mx >= viewTownBtnX && mx < viewTownBtnX + viewTownBtnW
+                        && my >= evalCityBtnY && my < evalCityBtnY + 16) {
+                    CityEvaluationScreen.openTown(town.id(), this);
+                    return true;
+                }
+                if (isOpPlayer() && teleportBtnW > 0
+                        && mx >= teleportBtnX && mx < teleportBtnX + teleportBtnW
+                        && my >= teleportBtnY && my < teleportBtnY + teleportBtnH) {
+                    triggerOpTeleport(popupCoordX, popupCoordZ);
+                    return true;
+                }
                 if (town.nationId() != null && my >= popupY && my < popupY + popupHeaderH) {
                     PoliticalScreen.openDossier(View.NATION, town.nationId(), this);
                     return true;
                 }
             }
+            return true;
+        }
+
+        if (button == 0 && selectedFlagId != null
+                && mx >= flagPopupX && mx < flagPopupX + flagPopupW
+                && my >= flagPopupY && my < flagPopupY + flagPopupH) {
             return true;
         }
 
@@ -975,17 +1474,31 @@ public final class PoliticalMapScreen extends Screen {
             return false;
         }
 
-        // 4. Right-click: open Town Info Popup on claimed chunk, or close if unclaimed
+        // 4. Right-click: open Town Info Popup on claimed chunk, or OP Coordinate Teleport Popup on any coordinate
         if (button == 1) {
             int wx = (int) Math.floor(screenToWorldX(mx));
             int wz = (int) Math.floor(screenToWorldZ(my));
+            MapCalibration cal = ClientMapState.INSTANCE.calibration();
+            if (cal.enforceWorldBounds()) {
+                wx = Math.max(cal.westBlockX(), Math.min(cal.eastBlockX(), wx));
+                wz = Math.max(cal.northBlockZ(), Math.min(cal.southBlockZ(), wz));
+            }
+            popupCoordX = wx;
+            popupCoordZ = wz;
             TownSummary clicked = ClientMapState.INSTANCE.townAtBlock(wx, wz);
             if (clicked != null && ClientMapState.INSTANCE.settings().enableTownInfoPopup()) {
                 popupTownId = clicked.id();
+                coordPopupOpen = false;
+                popupX = (int) mx + 10;
+                popupY = (int) my - 10;
+            } else if (isOpPlayer()) {
+                popupTownId = null;
+                coordPopupOpen = true;
                 popupX = (int) mx + 10;
                 popupY = (int) my - 10;
             } else {
                 popupTownId = null;
+                coordPopupOpen = false;
             }
             return true;
         }
@@ -1011,6 +1524,7 @@ public final class PoliticalMapScreen extends Screen {
             }
             centerX -= dx / pixelsPerBlock;
             centerZ -= dy / pixelsPerBlock;
+            clampCamera();
             return true;
         }
         return super.mouseDragged(mx, my, button, dx, dy);
@@ -1021,7 +1535,17 @@ public final class PoliticalMapScreen extends Screen {
         if (button == 0 && dragging) {
             dragging = false;
             if (!dragMoved) {
-                // Click without dragging: check Nation label click first, otherwise dismiss popup
+                // Click without dragging: check Active War Flag icon first, then Nation label, otherwise dismiss popups
+                for (FlagHitBox fbox : flagHitBoxes) {
+                    if (mx >= fbox.x1() && mx <= fbox.x2() && my >= fbox.y1() && my <= fbox.y2()) {
+                        selectedFlagId = fbox.flagId();
+                        popupTownId = null;
+                        coordPopupOpen = false;
+                        flagPopupX = (int) mx + 10;
+                        flagPopupY = (int) my - 10;
+                        return true;
+                    }
+                }
                 for (LabelHitBox box : nationLabelBoxes) {
                     if (mx >= box.x1() && mx <= box.x2() && my >= box.y1() && my <= box.y2()) {
                         PoliticalScreen.openDossier(View.NATION, box.nationId(), this);
@@ -1029,6 +1553,8 @@ public final class PoliticalMapScreen extends Screen {
                     }
                 }
                 popupTownId = null;
+                coordPopupOpen = false;
+                selectedFlagId = null;
             }
             return true;
         }
@@ -1046,8 +1572,10 @@ public final class PoliticalMapScreen extends Screen {
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            if (popupTownId != null) {
+            if (popupTownId != null || coordPopupOpen || selectedFlagId != null) {
                 popupTownId = null;
+                coordPopupOpen = false;
+                selectedFlagId = null;
                 return true;
             }
             if (searchVisible) {

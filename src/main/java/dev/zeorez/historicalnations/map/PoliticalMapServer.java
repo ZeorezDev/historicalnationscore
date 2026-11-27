@@ -13,10 +13,18 @@ import dev.zeorez.historicalnations.map.MapModels.NationSummary;
 import dev.zeorez.historicalnations.map.MapModels.ServerMapSettings;
 import dev.zeorez.historicalnations.map.MapModels.TownSummary;
 import io.netty.buffer.Unpooled;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
@@ -70,8 +78,14 @@ public final class PoliticalMapServer {
     private final MinecraftServer server;
     private final Set<UUID> subscribers = new HashSet<>();
     private final Map<UUID, RateWindow> tileBudgets = new HashMap<>();
+    private final Map<UUID, Integer> lastTeleportTick = new HashMap<>();
     private Snapshot current;
     private long nextRevision = 1L;
+    private boolean warOverlayDirty = true;
+
+    public void markWarOverlayDirty() {
+        this.warOverlayDirty = true;
+    }
 
     private static final class RateWindow {
         int startTick;
@@ -92,6 +106,9 @@ public final class PoliticalMapServer {
         if (server.getTickCount() % 4 != 0) return;
         PoliticalMapServer mgr = get(server);
         mgr.syncIfDirty();
+        if (server.getTickCount() % 20 == 0) {
+            mgr.syncWarOverlayIfDirty();
+        }
     }
 
     public static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
@@ -100,6 +117,7 @@ public final class PoliticalMapServer {
             if (mgr != null) {
                 mgr.subscribers.remove(sp.getUUID());
                 mgr.tileBudgets.remove(sp.getUUID());
+                mgr.lastTeleportTick.remove(sp.getUUID());
             }
         }
     }
@@ -108,11 +126,29 @@ public final class PoliticalMapServer {
         INSTANCES.remove(event.getServer());
     }
 
+    public void evaluationChanged(UUID town, dev.zeorez.historicalnations.core.CityEvaluation.Draft review) {
+        if (current == null) return;
+        var before = current.towns().get(town);
+        if (before == null) return;
+        var after = before.withEvaluation(review.level(), review.total(), review.rating());
+        if (before.equals(after)) return;
+        var towns = new LinkedHashMap<>(current.towns());
+        towns.put(town, after);
+        long previous = current.revision();
+        current = new Snapshot(current.mapId(), nextRevision++, current.dimension(), current.nations(), towns, current.claims());
+        if (subscribers.isEmpty()) return;
+        var delta = new DeltaPayload(List.of(), List.of(), List.of(after), List.of(), List.of());
+        var packet = new MapNetwork.MapDeltaPacket(current.mapId(), previous, current.revision(), delta.encodeCompressed());
+        for (UUID id : subscribers) MapNetwork.sendToPlayer(server.getPlayerList().getPlayer(id), packet);
+    }
+
     public Snapshot ensureSnapshot() {
         WorldRegistry data = WorldRegistry.get(server);
-        if (current == null || data.consumeMapDirty()) {
-            Snapshot fresh = capture(data, nextRevision++);
-            current = fresh;
+        if (current == null) {
+            data.consumeMapDirty();
+            current = capture(data, nextRevision++);
+        } else {
+            syncIfDirty();
         }
         return current;
     }
@@ -139,7 +175,10 @@ public final class PoliticalMapServer {
         }
 
         DeltaPayload delta = computeDelta(previous, fresh);
-        if (delta.isEmpty()) return;
+        if (delta.isEmpty()) {
+            current = previous;
+            return;
+        }
 
         if (delta.changedClaims().size() > MAX_DELTA_CLAIMS_BEFORE_RESYNC) {
             for (UUID sub : List.copyOf(subscribers)) {
@@ -159,6 +198,14 @@ public final class PoliticalMapServer {
         }
     }
 
+    /** Sends lightweight Earth map calibration and settings on player login so client boundary clamping is active immediately. */
+    public void sendCalibrationHint(ServerPlayer player) {
+        if (player == null || player.hasDisconnected() || !MapNetwork.canSend(player)) return;
+        WorldRegistry data = WorldRegistry.get(server);
+        MapNetwork.sendToPlayer(player, new MapNetwork.MapUpToDatePacket(
+                data.mapId(), 0L, MapCalibration.fromServer(server), ServerMapSettings.fromConfig()));
+    }
+
     public void handleSubscribe(ServerPlayer player, UUID knownMapId, long knownRevision, boolean subscribe) {
         if (player == null || player.hasDisconnected()) return;
         if (!TerritoryConfig.MAP_ENABLED.get()) return;
@@ -171,9 +218,98 @@ public final class PoliticalMapServer {
         if (snap.mapId().equals(knownMapId) && snap.revision() == knownRevision) {
             MapNetwork.sendToPlayer(player, new MapNetwork.MapUpToDatePacket(
                     snap.mapId(), snap.revision(), MapCalibration.fromServer(server), ServerMapSettings.fromConfig()));
+            sendWarOverlayToPlayer(player);
             return;
         }
         sendFullSnapshot(player, snap);
+        sendWarOverlayToPlayer(player);
+    }
+
+    public void syncWarOverlayIfDirty() {
+        if (!warOverlayDirty || !TerritoryConfig.MAP_ENABLED.get()) return;
+        warOverlayDirty = false;
+        if (subscribers.isEmpty()) return;
+        subscribers.removeIf(id -> server.getPlayerList().getPlayer(id) == null);
+        if (subscribers.isEmpty()) return;
+        var pkt = buildWarOverlayPacket();
+        for (UUID sub : List.copyOf(subscribers)) {
+            ServerPlayer sp = server.getPlayerList().getPlayer(sub);
+            if (sp != null && MapNetwork.canSend(sp)) {
+                MapNetwork.sendToPlayer(sp, pkt);
+            }
+        }
+    }
+
+    public void sendWarOverlayToPlayer(ServerPlayer player) {
+        if (player != null && MapNetwork.canSend(player)) {
+            MapNetwork.sendToPlayer(player, buildWarOverlayPacket());
+        }
+    }
+
+    public MapNetwork.MapWarOverlayPacket buildWarOverlayPacket() {
+        WorldRegistry data = WorldRegistry.get(server);
+        MapCalibration cal = MapCalibration.fromServer(server);
+        ResourceLocation targetDim = cal.dimension();
+        boolean enableOverlay = TerritoryConfig.WAR_ENABLE_OCCUPATION_OVERLAY.get();
+
+        Set<UUID> warringNations = new HashSet<>();
+        for (var war : data.wars.ongoingWars()) {
+            warringNations.addAll(war.attackerNations);
+            warringNations.addAll(war.defenderNations);
+        }
+
+        List<dev.zeorez.historicalnations.war.WarModels.MapOccupationOverlay> occs = new ArrayList<>();
+        if (enableOverlay) {
+            for (var war : data.wars.ongoingWars()) {
+                String title = dev.zeorez.historicalnations.war.WarService.warTitle(data, war);
+                for (var occ : war.occupiedChunks.values()) {
+                    if (!targetDim.equals(occ.location().dimension())) continue;
+                    occs.add(new dev.zeorez.historicalnations.war.WarModels.MapOccupationOverlay(
+                            occ.location().x(),
+                            occ.location().z(),
+                            war.warId,
+                            occ.originalNationId(),
+                            occ.occupyingNationId(),
+                            title
+                    ));
+                }
+            }
+        }
+
+        List<dev.zeorez.historicalnations.war.WarModels.MapFlagOverlay> flags = new ArrayList<>();
+        if (enableOverlay) {
+            for (var f : data.wars.activeFlags()) {
+                if (!targetDim.equals(f.chunk.dimension())) continue;
+                flags.add(new dev.zeorez.historicalnations.war.WarModels.MapFlagOverlay(
+                        f.flagId,
+                        f.warId,
+                        f.chunk.x(),
+                        f.chunk.z(),
+                        f.basePos.getX(),
+                        f.basePos.getZ(),
+                        f.attackingNationId,
+                        f.defendingNationId,
+                        f.defendingTownId,
+                        f.progressPercent(),
+                        f.remainingSeconds(),
+                        f.runState
+                ));
+            }
+        }
+
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            buf.writeBoolean(enableOverlay);
+            buf.writeVarInt(warringNations.size());
+            for (UUID nid : warringNations) buf.writeUUID(nid);
+            buf.writeVarInt(occs.size());
+            for (var o : occs) o.write(buf);
+            buf.writeVarInt(flags.size());
+            for (var f : flags) f.write(buf);
+            return new MapNetwork.MapWarOverlayPacket(data.mapId(), MapModels.compress(buf));
+        } finally {
+            buf.release();
+        }
     }
 
     public void sendFullSnapshot(ServerPlayer player, Snapshot snap) {
@@ -253,8 +389,8 @@ public final class PoliticalMapServer {
             win.startTick = now;
             win.requests = 0;
         }
-        if (++win.requests > 48) {
-            return; // Silently drop excess burst; client will retry missing visible tiles smoothly.
+        if (++win.requests > 200) {
+            return; // Client paces requests and times out in-flight entries cleanly if throttled.
         }
 
         MapCalibration cal = MapCalibration.fromServer(server);
@@ -291,6 +427,82 @@ public final class PoliticalMapServer {
         }, TILE_IO_POOL);
     }
 
+    /**
+     * Server-verified OP teleport from right-click on the Political World Map.
+     * Strictly requires permission level >= 2 (vanilla /tp level), clamps inside Earth bounds,
+     * resolves safe surface/water Y, and teleports cleanly on Dedicated & Integrated Servers.
+     */
+    public boolean handleMapTeleport(ServerPlayer player, int requestedBlockX, int requestedBlockZ) {
+        if (player == null || (! (player instanceof FakePlayer) && player.hasDisconnected())) return false;
+        if (!TerritoryConfig.MAP_ENABLED.get()) return false;
+        if (!player.hasPermissions(2)) {
+            player.displayClientMessage(Component.translatable("historical_nations.op_only"), true);
+            return false;
+        }
+
+        int now = server.getTickCount();
+        Integer prevTick = lastTeleportTick.get(player.getUUID());
+        if (prevTick != null && now - prevTick >= 0 && now - prevTick < 10) {
+            return false;
+        }
+        lastTeleportTick.put(player.getUUID(), now);
+
+        MapCalibration cal = MapCalibration.fromServer(server);
+        int tx = requestedBlockX;
+        int tz = requestedBlockZ;
+        if (cal.enforceWorldBounds()) {
+            tx = Math.max(cal.westBlockX(), Math.min(cal.eastBlockX(), tx));
+            tz = Math.max(cal.northBlockZ(), Math.min(cal.southBlockZ(), tz));
+        }
+
+        ServerLevel targetLevel = server.getLevel(ResourceKey.create(Registries.DIMENSION, cal.dimension()));
+        if (targetLevel == null) {
+            targetLevel = server.overworld();
+        }
+
+        targetLevel.getChunk(tx >> 4, tz >> 4);
+        double safeY = findSafeSurfaceY(targetLevel, tx, tz, player.getY());
+
+        if (player.isPassenger()) {
+            player.stopRiding();
+        }
+        player.resetFallDistance();
+        player.setDeltaMovement(Vec3.ZERO);
+
+        if (player instanceof FakePlayer || player.connection == null) {
+            player.moveTo(tx + 0.5D, safeY, tz + 0.5D, player.getYRot(), player.getXRot());
+        } else {
+            player.teleportTo(targetLevel, tx + 0.5D, safeY, tz + 0.5D, player.getYRot(), player.getXRot());
+        }
+
+        player.displayClientMessage(Component.translatable("historical_nations.map_teleported", tx, (int) Math.floor(safeY), tz), true);
+        return true;
+    }
+
+    private static double findSafeSurfaceY(ServerLevel level, int x, int z, double fallbackY) {
+        int minBuild = level.getMinBuildHeight();
+        int maxBuild = level.getMaxBuildHeight() - 2;
+        int surface = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+        if (surface <= minBuild + 1) {
+            surface = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z);
+        }
+        if (surface <= minBuild + 1) {
+            return Math.max(minBuild + 2, Math.min(maxBuild, fallbackY));
+        }
+        int y = Math.max(minBuild + 1, Math.min(maxBuild, surface));
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos(x, y, z);
+        for (int i = 0; i < 16 && y + i <= maxBuild; i++) {
+            pos.set(x, y + i, z);
+            boolean feetClear = level.getBlockState(pos).getCollisionShape(level, pos).isEmpty();
+            pos.set(x, y + i + 1, z);
+            boolean headClear = level.getBlockState(pos).getCollisionShape(level, pos).isEmpty();
+            if (feetClear && headClear) {
+                return y + i;
+            }
+        }
+        return y;
+    }
+
     private Snapshot capture(WorldRegistry data, long revision) {
         MapCalibration cal = MapCalibration.fromServer(server);
         ResourceLocation targetDim = cal.dimension();
@@ -323,6 +535,14 @@ public final class PoliticalMapServer {
             long[] home = townFirstChunk.get(t.id());
             int homeX = home != null ? (int) (home[0] * 16 + 8) : 0;
             int homeZ = home != null ? (int) (home[1] * 16 + 8) : 0;
+            var sp = data.townSpawn(t.id());
+            if (sp != null && targetDim.equals(sp.dimension()) && chunkOwners.get(MapModels.packChunk(
+                    sp.blockPos().getX() >> 4, sp.blockPos().getZ() >> 4)) != null
+                    && t.id().equals(chunkOwners.get(MapModels.packChunk(sp.blockPos().getX() >> 4, sp.blockPos().getZ() >> 4)))) {
+                homeX = sp.blockPos().getX();
+                homeZ = sp.blockPos().getZ();
+            }
+            var review = data.evaluation(t.id());
             townMap.put(t.id(), new TownSummary(
                     t.id(),
                     t.name(),
@@ -332,7 +552,8 @@ public final class PoliticalMapServer {
                     claims,
                     homeX,
                     homeZ,
-                    home != null
+                    home != null, review == null ? 1 : review.draft().level(),
+                    review == null ? -1 : review.draft().total(), review == null ? 0 : review.draft().rating()
             ));
         }
 

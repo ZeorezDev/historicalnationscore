@@ -86,6 +86,13 @@ public final class ClientMapState implements MapNetwork.ClientHandler {
     private final Map<UUID, NationBounds> nationBounds = new HashMap<>();
     private boolean boundsDirty = true;
 
+    // v11.0.0 War Overlay state (occupations, active battle flags, and belligerent nations)
+    private boolean enableOccupationOverlay = true;
+    private final java.util.Set<UUID> warringNationIds = new java.util.HashSet<>();
+    private final Long2ObjectOpenHashMap<dev.zeorez.historicalnations.war.WarModels.MapOccupationOverlay> occupations =
+            new Long2ObjectOpenHashMap<>();
+    private final List<dev.zeorez.historicalnations.war.WarModels.MapFlagOverlay> activeFlags = new ArrayList<>();
+
     // Staging buffers while receiving a multi-part full snapshot
     private UUID stagingMapId;
     private long stagingRevision = -1L;
@@ -103,9 +110,43 @@ public final class ClientMapState implements MapNetwork.ClientHandler {
     public ServerMapSettings settings() { return settings; }
     public Collection<NationSummary> nations() { return nations.values(); }
     public Collection<TownSummary> towns() { return towns.values(); }
+    record TownLabel(TownSummary town, net.minecraft.network.chat.Component text) {
+        TownLabel(TownSummary town) {
+            this(town, net.minecraft.network.chat.Component.literal(town.name().toUpperCase(Locale.ROOT))
+                    .withStyle(style -> style.withBold(town.level() >= 4)));
+        }
+    }
+    private final java.util.NavigableSet<TownLabel> labels = new java.util.TreeSet<>(
+            Comparator.<TownLabel>comparingInt(l -> l.town().level()).reversed().thenComparing(l -> l.town().id()));
+    private final Map<UUID,TownLabel> labelIndex = new HashMap<>();
+    Iterable<TownLabel> labels() { return labels; }
+    TownLabel label(UUID town) { return labelIndex.get(town); }
+    private void removeLabel(UUID id) {
+        var old = labelIndex.remove(id);
+        if (old != null) labels.remove(old);
+    }
+    private void cacheLabel(TownSummary town) {
+        removeLabel(town.id());
+        if (!town.hasClaims()) return;
+        var label = new TownLabel(town);
+        labels.add(label);
+        labelIndex.put(town.id(),label);
+    }
     public NationSummary nation(UUID id) { return id == null ? null : nations.get(id); }
     public TownSummary town(UUID id) { return id == null ? null : towns.get(id); }
     public int totalClaimedChunks() { return chunkOwners.size(); }
+    public boolean enableOccupationOverlay() { return enableOccupationOverlay; }
+    public boolean isNationAtWar(UUID nationId) { return nationId != null && warringNationIds.contains(nationId); }
+    public boolean hasAnyOngoingWar() { return !warringNationIds.isEmpty() || !occupations.isEmpty() || !activeFlags.isEmpty(); }
+    public dev.zeorez.historicalnations.war.WarModels.MapOccupationOverlay occupationAtChunk(int cx, int cz) {
+        return occupations.get(MapModels.packChunk(cx, cz));
+    }
+    public Collection<dev.zeorez.historicalnations.war.WarModels.MapOccupationOverlay> occupations() {
+        return occupations.values();
+    }
+    public List<dev.zeorez.historicalnations.war.WarModels.MapFlagOverlay> activeFlags() {
+        return activeFlags;
+    }
 
     public TownSummary townAtBlock(int blockX, int blockZ) {
         return townAtChunk(blockX >> 4, blockZ >> 4);
@@ -140,11 +181,15 @@ public final class ClientMapState implements MapNetwork.ClientHandler {
     public void onDisconnect() {
         mapId = null;
         revision = 0L;
+        labels.clear(); labelIndex.clear();
         nations.clear();
         towns.clear();
         chunkOwners.clear();
         regions.clear();
         nationBounds.clear();
+        warringNationIds.clear();
+        occupations.clear();
+        activeFlags.clear();
         stagingRevision = -1L;
         stagingNations.clear();
         stagingTowns.clear();
@@ -163,10 +208,16 @@ public final class ClientMapState implements MapNetwork.ClientHandler {
             onDisconnect();
             mapId = pkt.mapId();
         }
-        this.revision = pkt.revision();
+        if (pkt.revision() > 0L) {
+            this.revision = pkt.revision();
+        }
         this.calibration = pkt.calibration();
         this.settings = pkt.settings();
         tiles.configure(pkt.mapId(), pkt.settings().enableTileCache(), pkt.settings().maxCachedTiles());
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null && mc.screen instanceof PoliticalMapScreen screen) {
+            screen.onMapDataUpdated(false);
+        }
     }
 
     @Override
@@ -233,6 +284,8 @@ public final class ClientMapState implements MapNetwork.ClientHandler {
         nations.putAll(stagingNations);
         towns.clear();
         towns.putAll(stagingTowns);
+        labels.clear(); labelIndex.clear();
+        towns.values().forEach(this::cacheLabel);
         chunkOwners.clear();
         regions.clear();
 
@@ -274,10 +327,12 @@ public final class ClientMapState implements MapNetwork.ClientHandler {
         List<UUID> affiliatedChangedTowns = new ArrayList<>();
         for (UUID remT : delta.removedTowns()) {
             towns.remove(remT);
+            removeLabel(remT);
             affiliatedChangedTowns.add(remT);
         }
         for (TownSummary upT : delta.upsertedTowns()) {
             TownSummary prev = towns.put(upT.id(), upT);
+            cacheLabel(upT);
             if (prev == null || !Objects.equals(prev.nationId(), upT.nationId())) {
                 affiliatedChangedTowns.add(upT.id());
             }
@@ -297,7 +352,7 @@ public final class ClientMapState implements MapNetwork.ClientHandler {
                 rm.dirty = true;
             }
         }
-        boundsDirty = true;
+        boundsDirty |= nationVisualChanged || !affiliatedChangedTowns.isEmpty() || !delta.changedClaims().isEmpty();
 
         if (Minecraft.getInstance().screen instanceof PoliticalMapScreen screen) {
             screen.onMapDataUpdated(false);
@@ -307,6 +362,33 @@ public final class ClientMapState implements MapNetwork.ClientHandler {
     @Override
     public void onTileResponse(MapNetwork.TileResponsePacket pkt) {
         tiles.onNetworkTileResponse(pkt);
+    }
+
+    @Override
+    public void onWarOverlay(MapNetwork.MapWarOverlayPacket pkt) {
+        if (mapId != null && !mapId.equals(pkt.mapId())) return;
+        FriendlyByteBuf buf = MapModels.decompress(pkt.compressedOverlay());
+        try {
+            enableOccupationOverlay = buf.readBoolean();
+            int natCount = Math.min(4096, buf.readVarInt());
+            warringNationIds.clear();
+            for (int i = 0; i < natCount; i++) {
+                warringNationIds.add(buf.readUUID());
+            }
+            int occCount = Math.min(65536, buf.readVarInt());
+            occupations.clear();
+            for (int i = 0; i < occCount; i++) {
+                var o = dev.zeorez.historicalnations.war.WarModels.MapOccupationOverlay.read(buf);
+                occupations.put(MapModels.packChunk(o.chunkX(), o.chunkZ()), o);
+            }
+            int flagCount = Math.min(1024, buf.readVarInt());
+            activeFlags.clear();
+            for (int i = 0; i < flagCount; i++) {
+                activeFlags.add(dev.zeorez.historicalnations.war.WarModels.MapFlagOverlay.read(buf));
+            }
+        } finally {
+            buf.release();
+        }
     }
 
     /** Queries and lazily meshes ONLY the 64x64-chunk region buckets intersecting the visible viewport. */

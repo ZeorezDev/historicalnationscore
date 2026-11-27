@@ -48,20 +48,24 @@ public final class PoliticalPanel {
     private void field(String key,String value) { rows.add(row("@"+key,value)); }
     private void title(String value) { out.putString("title",value); }
     private void counts() {
+        Counts counts = counts(viewer, data);
+        population = counts.people();
+        land = counts.chunks();
+    }
+    static Counts counts(ServerPlayer viewer, WorldRegistry data) {
         int tick=viewer.server.getTickCount();
         Counts cached=data.directoryCounts;
         if (cached!=null && cached.tick()==tick) {
-            population=cached.people(); land=cached.chunks();
-            return;
+            return cached;
         }
-        population=new HashMap<>(); land=new HashMap<>();
+        Map<UUID,Integer> population=new HashMap<>(), land=new HashMap<>();
         data.playerTowns.values().forEach(id->population.merge(id,1,Integer::sum));
         var territories=new TownTerritories(viewer.server);
         for (var pos:data.territoryLocations()) {
             var t=territories.verified(pos);
             if (t!=null) land.merge(t.town(),1,Integer::sum);
         }
-        data.directoryCounts=new Counts(tick,population,land);
+        return data.directoryCounts=new Counts(tick,population,land);
     }
     private String funds(Ledger.Account bank, String code) { return data.ledger.balance(bank.in(code))+" "+code; }
     private void build() {
@@ -75,12 +79,17 @@ public final class PoliticalPanel {
             if (q.view()==View.HOME) {
                 out.putInt("townCount",data.towns.size());
                 out.putInt("nationCount",data.nations.size());
+                out.putInt("warCount",data.wars.ongoingWars().size());
             }
             if (q.view()==View.PLAYER) {
                 field("town_rank",home==null ? "@none" : role(home,actor));
                 field("nation_rank",country==null ? "@none" : data.isNationLeader(actor) ? "@leader" : "@citizen");
                 field("wallet",funds(Ledger.Account.player(actor),data.ledger.market.official(country==null?null:country.id())));
             }
+            return;
+        }
+        if (q.view()==View.WAR_DIPLOMACY) {
+            buildWarDiplomacy(actor, country);
             return;
         }
         if (q.view()==View.NATIONS || q.view()==View.TOWNS) { directory(null); return; }
@@ -127,6 +136,19 @@ public final class PoliticalPanel {
                 field("people",""+data.members(id).size()); field("land",""+new TownTerritories(viewer.server).count(id));
                 field("bank",funds(Ledger.Account.town(id),data.ledger.market.official(parent==null?null:parent.id())));
                 field("status",parent==null?"@independent":parent.capitalTown().equals(id)?"@capital":"@member_town");
+                var review = data.evaluation(id);
+                field("development", "@level_" + (review == null ? 1 : review.draft().level()));
+                field("score", review == null ? "@unevaluated" : review.draft().total() + "/100");
+                field("rating", review == null ? "@unrated" : CityEvaluation.stars(review.draft().rating()));
+                if (review != null) {
+                    field("evaluated", java.time.Instant.ofEpochMilli(review.date()).toString().substring(0, 10));
+                    for (var category : CityEvaluation.Category.values())
+                        field(category.name().toLowerCase(Locale.ROOT), review.draft().score(category) + "/" + category.max);
+                    String summary = review.draft().summary();
+                    if (!summary.isEmpty()) field("summary", summary.startsWith("@") ? "@" + summary : summary);
+                }
+                var tsp=data.townSpawn(id);
+                field("spawn",tsp==null?"@none":tsp.blockPos().getX()+", "+tsp.blockPos().getY()+", "+tsp.blockPos().getZ());
                 String description=data.description(id);
                 if (!description.isEmpty()) field("description",description.startsWith("@") ? "@"+description : description);
             }
@@ -142,9 +164,87 @@ public final class PoliticalPanel {
                 field("inflation",BigDecimal.valueOf(data.ledger.market.bank(id).inflation,2)+"%");
                 field("exchange","1 "+m.code+" = "+MonetaryPolicy.decimal(m.quote)+" "+REF);
                 field("map_color",dev.zeorez.historicalnations.map.NationPalette.formatHex(data.nationColor(id)));
+                var nsp=data.nationSpawn(id);
+                if(nsp==null) nsp=data.townSpawn(n.capitalTown());
+                field("spawn",nsp==null?"@none":nsp.blockPos().getX()+", "+nsp.blockPos().getY()+", "+nsp.blockPos().getZ());
+                var allies=data.wars.alliesOf(id).stream().map(aid->data.getNationById(aid).map(Nation::name).orElse("?")).toList();
+                field("allies",allies.isEmpty()?"@none":String.join(", ",allies));
+                var activeWars=data.wars.ongoingWarsOfNation(id);
+                field("active_wars",activeWars.isEmpty()?"@none":""+activeWars.size());
             }
             default -> {}
         }
+    }
+
+    private void buildWarDiplomacy(UUID actor, Nation country) {
+        title("@war_diplomacy");
+        if (country != null) {
+            out.putUUID("subject", country.id());
+            out.putBoolean("office", data.isNationLeader(actor));
+        }
+        long nowMs = System.currentTimeMillis();
+        boolean sysEnabled = dev.zeorez.historicalnations.war.WarService.isWarSystemEnabled(data);
+        String winStatus = dev.zeorez.historicalnations.war.WarSchedule.describeStatus(java.time.Instant.ofEpochMilli(nowMs));
+        field("war_system", sysEnabled ? "@war_enabled" : "@war_disabled_short");
+        field("war_window", winStatus);
+        field("active_attacks", "" + data.wars.activeFlags().size());
+
+        if (country != null) {
+            var allies = data.wars.alliesOf(country.id()).stream()
+                    .map(aid -> data.getNationById(aid).map(Nation::name).orElse("?")).toList();
+            field("allies", allies.isEmpty() ? "@none" : String.join(", ", allies));
+
+            var truces = data.wars.activeTrucesFor(country.id(), nowMs);
+            if (truces.isEmpty()) {
+                field("truces", "@none");
+            } else {
+                List<String> trTxt = new ArrayList<>();
+                for (var tr : truces) {
+                    UUID other = tr.pair().other(country.id());
+                    String oname = data.getNationById(other).map(Nation::name).orElse("?");
+                    long hrs = Math.max(1L, (tr.expiresAtEpochMs() - nowMs + 3_599_999L) / 3_600_000L);
+                    trTxt.add(oname + " (" + hrs + "h)");
+                }
+                field("truces", String.join(", ", trTxt));
+            }
+        }
+
+        // Ongoing Wars list (clickable to open Peace Treaty screen!)
+        for (var war : data.wars.ongoingWars()) {
+            String warTitle = dev.zeorez.historicalnations.war.WarService.warTitle(data, war);
+            String stateDesc = war.state.name();
+            if (war.state == dev.zeorez.historicalnations.war.WarModels.WarState.PREPARING && war.preparationEndsAtEpochMs > nowMs) {
+                long mins = Math.max(1L, (war.preparationEndsAtEpochMs - nowMs) / 60_000L);
+                stateDesc = "PREP " + (mins / 60) + "h " + (mins % 60) + "m";
+            } else {
+                long durMins = Math.max(0L, (nowMs - war.declaredAtEpochMs) / 60_000L);
+                stateDesc = war.state.name() + " • " + (durMins / 60) + "h " + (durMins % 60) + "m";
+            }
+            Set<UUID> occTownIds = new HashSet<>();
+            war.occupiedChunks.values().forEach(oc -> occTownIds.add(oc.originalTownId()));
+            int activeFronts = data.wars.activeFlagsOfWar(war.warId).size();
+            String summary = stateDesc
+                    + " | Occ: " + war.occupiedChunks.size() + " (" + occTownIds.size() + " towns)"
+                    + " | Flags: " + activeFronts
+                    + (war.peaceDraft.attackerApproved || war.peaceDraft.defenderApproved ? " | [PEACE OFFER]" : "");
+            CompoundTag r = row("⚔ " + warTitle, summary);
+            r.putUUID("warId", war.warId);
+            rows.add(r);
+        }
+
+        // Diplomatic & War actions for Nation Leaders directly inside WAR & DIPLOMACY
+        if (country != null && data.isNationLeader(actor)) {
+            var allowed = OfficeActions.allowed(data, actor, country.id(), true);
+            for (var act : List.of(OfficeActions.DECLARE_WAR, OfficeActions.PEACE_TREATY,
+                    OfficeActions.JOIN_WAR, OfficeActions.ALLY, OfficeActions.UNALLY)) {
+                if (allowed.contains(act)) {
+                    rows.add(operation(act));
+                }
+            }
+        }
+        out.putInt("page", 0);
+        out.putInt("pages", 1);
+        out.putInt("total", rows.size());
     }
     private static CompoundTag operation(OfficeActions action) {
         var r=row("@act_"+action.name().toLowerCase(Locale.ROOT));

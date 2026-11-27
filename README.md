@@ -1,4 +1,4 @@
-# Historical Nations Core · v9.0.0
+# Historical Nations Core · v11.0.0
 
 <img src="src/main/resources/historical_nations_logo.png" alt="Historical Nations Core amblemi" width="320">
 
@@ -17,10 +17,14 @@ Belediye ve devlet bilgi ekranlarındaki Yönetim sekmesi, üyelik ve göreve uy
 | Mod kimliği | `historical_nations` |
 | Sohbet dilleri | Türkçe ve İngilizce |
 
+## Şehir değerlendirmesi
+
+OP 4 yöneticileri `/hnc admin cities` komutuyla şehir seçebilir veya siyasi haritada bir şehre sağ tıklayıp **Şehri değerlendir** düğmesini kullanabilir. Beş kategori toplam 100 puandır. Gelişim seviyesi ayrıca seçilir. Önerilen yıldız değiştirilirse **Değerlendirme notları** sekmesinde gerekçe girilir. Aynı sekmedeki herkese açık özet, şehir dosyasında kategori puanlarıyla birlikte görünür. Önceki değerlendirmeleri tarih sırasıyla incelemek için **Değerlendirme geçmişi** düğmesini kullanın.
+
 ## Kurulum ve derleme
 
 1. JDK 17 ile `JAVA_HOME` ayarlayın. Depo kökünde Windows için `.\gradlew.bat build`, Linux veya macOS için `./gradlew build` çalıştırın.
-2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-9.0.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
+2. Forge 47.4.28 sunucusuna ve istemcilere `build/libs/historical_nations-11.0.0.jar` ile `open-parties-and-claims-forge-1.20.1-0.33.0.jar` kurun. Yükseltmeden önce sunucuyu kapatıp dünyayı yedekleyin ve eski Historical Nations JAR’ını değiştirin. v0.2.0 dünyasındaki her doğrulanmış şehir chunk’ı, ilk yüklemede belediyeye ait bir residential plot alır.
 3. Sunucuyu açın. Oyunda `/town list` ve `/town claimstatus` komutlarıyla kurulumu deneyin. Sohbet metinleri istemcinin dil ayarını izler.
 
 [Forge 1.20.1 indirmeleri](https://files.minecraftforge.net/net/minecraftforge/forge/index_1.20.1.html) · [Resmî OPAC 0.33.0 paketleri](https://chocolateminecraft.com/maven/xaero/pac/open-parties-and-claims-forge-1.20.1/0.33.0/)
@@ -43,15 +47,39 @@ Komutlar bir oyuncu adına çalışır. Şehir ve devlet adları 1–32 karakter
 | `/town unclaim` | Belediye başkanı bulunduğu şehir chunk'ını bırakır. |
 | `/town claims` | Kendi şehrinizin tüm boyutlardaki doğrulanmış chunk sayısını gösterir. |
 | `/town claiminfo` | Bulunduğunuz chunk'ın doğrulanmış şehir adını gösterir. Kişisel claim'lerde şehir alanı boştur. |
+| `/town spawn [ad]` | Kendi şehrinizin (veya aynı devletteki bir üye şehrin) spawn noktasına ışınlar. |
+| `/town set spawn`, `/town setspawn` | Belediye başkanı bulunduğu doğrulanmış şehir chunk'ı içinde kasaba spawn noktasını ayarlar. |
 
 | Devlet komutu | Etki |
 | --- | --- |
 | `/nation create <ad>` | Bağımsız bir şehrin başkanı varsayılan 128 Altın Külçesi (2 stack) karşılığında devlet kurar. Kurucu şehir başkent olur. |
+| `/nation spawn [ad]` | Vatandaşları devletlerinin spawn noktasına ışınlar. |
+| `/nation set spawn`, `/nation setspawn` | Devlet lideri (başkent belediye başkanı) devlet sınırları içindeki doğrulanmış bir chunk'ta devlet spawn noktasını ayarlar. |
 | `/nation invite <şehir>` | Devlet lideri bağımsız bir şehri davet eder. |
 | `/nation accept <ad>`, `/nation deny <ad>` | Davet edilen şehrin belediye başkanı karar verir. |
 | `/nation leave` | Başkent dışındaki bir üye şehrin başkanı şehrini devletten ayırır. |
 | `/nation info [ad]`, `/nation list`, `/nation towns` | Devlet bilgilerini, tüm devletleri veya devletinizin üye şehirlerini gösterir. |
-| `/nation disband` | Devlet lideri devleti dağıtır. Üye şehirler bağımsız olur ve vatandaşlarını korur. |
+| `/nation ally <devlet>`, `/nation unally <devlet>` | Karşılıklı ittifak teklif eder / kabul eder veya mevcut ittifakı sonlandırır. |
+| `/nation disband` | Devlet lideri devleti dağıtır (aktif savaşta değilse). Üye şehirler bağımsız olur ve vatandaşlarını korur. |
+
+## Bayrak Savaşı, İşgal ve Barış Anlaşmaları (v11.0.0)
+
+Historical Nations Core v11.0.0, şehir yapılarını yıkmadan cephe hattı boyunca chunk-chunk ilerleyen stratejik bir devletler arası savaş sistemi sunar:
+
+1. **Savaş İlanı ve Hazırlık:** Devlet lideri `/war declare <devlet>` komutuyla (veya `/hnc` → **Savaş ve Diplomasi** sekmesinden) savaş ilan eder. Müttefiklere ve ateşkes süresindeki devletlere savaş açılamaz. Varsayılan **24 saat** hazırlık süresinden sonra savaş **ACTIVE** durumuna geçer.
+2. **Savaş Saatleri (War Window):** Çatışmalar varsayılan olarak `Europe/Istanbul` saat diliminde **Cumartesi ve Pazar 18:00–23:00** arasında aktiftir. Pencere dışında yeni bayrak dikilemez ve devam eden sayaçlar duraklatılır.
+3. **Çit ile Savaş Bayrağı Dikme:** Saldıran devletin vatandaşı, kendi sınırına (veya işgal ettiği cepheye / en fazla 3 sahipsiz wilderness chunk uzağındaki dış düşman sınırına) bitişik düşman kasaba chunk'ında açık gökyüzü gören sağlam zemine `minecraft:oak_fence` koyduğunda blok otomatik olarak **War Capture Flag** (`çit + renk değiştiren yün + meşale`) yapısına dönüşür.
+4. **Ele Geçirme ve Savunma:** Varsayılan **300 saniye** boyunca en az bir saldıran oyuncunun bayrağın `32` blok yakınında kalması gerekir. Savunan oyuncular bayrağın yün veya çit bloğunu kırarak saldırıyı iptal edebilir. Şehir binaları ve sandıklar OPaC koruması altında kalır.
+5. **İşgal (`OCCUPIED`) ve İlhak (`ANNEXED`):** Süre dolduğunda chunk **OCCUPIED** olur; Siyasi Dünya Haritasında (`/war map`) asıl devlet renginin üzerinde işgalci devletin diyagonal tarama deseniyle görünür ve sonraki düşman chunk'larına ilerlemek için cephe oluşturur. Kalıcı OPaC ve kasaba devri yalnızca iki devlet liderinin `/war peace <devlet>` (**Peace Treaty GUI**) ekranında aynı anlaşma sürümünü onaylamasıyla gerçekleşir; sonrasında varsayılan **48 saat** ateşkes başlar.
+
+| Savaş komutu | Etki |
+| --- | --- |
+| `/war`, `/war status`, `/war list`, `/war info [devlet]` | Savaş ve Diplomasi panelini, savaş saati durumunu ve aktif savaşları gösterir. |
+| `/war declare <devlet>` | Hedef devlete resmî savaş ilan eder. |
+| `/war join <müttefikDevlet>` | Müttefik bir devletin devam eden savaşına onun safında katılır. |
+| `/war peace <devlet>` | İşgal edilen chunk'ların iade/ilhak seçimi ve çift taraflı onay için **Peace Treaty GUI** ekranını açar. |
+| `/war map`, `/war attacks`, `/war truce` | Savaş Haritası modunu, aktif saldırı bayraklarını ve kalan ateşkes sürelerini gösterir. |
+| `/war admin enable\|disable\|stop\|resume\|liquidate\|inspect\|window` | OP yöneticileri için savaş sistemini açma/kapatma, işgalleri koruyarak duraklatma (`stop`) ve denetleme komutları. |
 
 Davetler yeniden başlatmada korunur. Bir oyuncu şehre, bir şehir devlete katıldığında aynı alıcıya gönderilmiş diğer davetler temizlenir. Başkent belediye başkanlığı devredildiğinde devlet liderliği de devredilir.
 

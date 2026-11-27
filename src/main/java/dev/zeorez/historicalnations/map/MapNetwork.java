@@ -17,7 +17,7 @@ import java.util.UUID;
  * Strictly zero client-only class imports so Dedicated Servers never load Dist.CLIENT classes.
  */
 public final class MapNetwork {
-    public static final String PROTOCOL = "1";
+    public static final String PROTOCOL = "5";
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(HistoricalNations.ID, "world_map"),
             () -> PROTOCOL,
@@ -37,6 +37,7 @@ public final class MapNetwork {
         void onSnapshotPart(MapSnapshotPartPacket pkt);
         void onDelta(MapDeltaPacket pkt);
         void onTileResponse(TileResponsePacket pkt);
+        void onWarOverlay(MapWarOverlayPacket pkt);
     }
 
     private static volatile ClientHandler clientHandler;
@@ -64,6 +65,10 @@ public final class MapNetwork {
         if (!canSend(player)) return false;
         sendToPlayer(player, new OpenMapPacket(focus, targetId, blockX, blockZ));
         return true;
+    }
+
+    public static boolean requestClientOpenWarMode(ServerPlayer player) {
+        return requestClientOpen(player, FocusKind.WAR_MODE, null, 0, 0);
     }
 
     public record OpenMapPacket(FocusKind focus, UUID targetId, int blockX, int blockZ) {
@@ -218,6 +223,31 @@ public final class MapNetwork {
         }
     }
 
+    public record MapTeleportPacket(int blockX, int blockZ) {
+        void write(FriendlyByteBuf b) {
+            b.writeInt(blockX);
+            b.writeInt(blockZ);
+        }
+
+        static MapTeleportPacket read(FriendlyByteBuf b) {
+            return new MapTeleportPacket(b.readInt(), b.readInt());
+        }
+    }
+
+    public record MapWarOverlayPacket(UUID mapId, byte[] compressedOverlay) {
+        void write(FriendlyByteBuf b) {
+            b.writeUUID(mapId);
+            b.writeByteArray(compressedOverlay);
+        }
+
+        static MapWarOverlayPacket read(FriendlyByteBuf b) {
+            return new MapWarOverlayPacket(
+                    b.readUUID(),
+                    b.readByteArray(MapModels.MAX_COMPRESSED_PACKET_BYTES)
+            );
+        }
+    }
+
     public static void register() {
         int id = 0;
         CHANNEL.messageBuilder(OpenMapPacket.class, id++, NetworkDirection.PLAY_TO_CLIENT)
@@ -278,6 +308,22 @@ public final class MapNetwork {
                 .consumerMainThread((pkt, ctx) -> {
                     ClientHandler h = clientHandler;
                     if (h != null) h.onTileResponse(pkt);
+                }).add();
+
+        CHANNEL.messageBuilder(MapTeleportPacket.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(MapTeleportPacket::write).decoder(MapTeleportPacket::read)
+                .consumerMainThread((pkt, ctx) -> {
+                    ServerPlayer sp = ctx.get().getSender();
+                    if (sp != null && sp.server != null) {
+                        PoliticalMapServer.get(sp.server).handleMapTeleport(sp, pkt.blockX(), pkt.blockZ());
+                    }
+                }).add();
+
+        CHANNEL.messageBuilder(MapWarOverlayPacket.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(MapWarOverlayPacket::write).decoder(MapWarOverlayPacket::read)
+                .consumerMainThread((pkt, ctx) -> {
+                    ClientHandler h = clientHandler;
+                    if (h != null) h.onWarOverlay(pkt);
                 }).add();
     }
 }

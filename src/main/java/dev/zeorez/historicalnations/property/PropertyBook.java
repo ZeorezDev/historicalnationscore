@@ -37,6 +37,31 @@ public final class PropertyBook {
                 "Plot " + key.x() + ", " + key.z(), Parcel.Kind.RESIDENTIAL)));
     }
     public void remove(Location loc) { plots.remove(loc); }
+
+    /** Verifies whether a chunk's plot/quarter records are healthy and safe to annex to another town. */
+    public boolean canTransferPlot(Location loc) {
+        Plot plot = plots.get(loc);
+        return plot == null || plot.unreadable == null;
+    }
+
+    /** Copies any referenced plot-group rules from oldTown to newTown when a chunk is annexed via peace treaty. */
+    public void copyReferencedPlotGroups(Location loc, UUID oldTown, UUID newTown) {
+        if (oldTown == null || newTown == null || oldTown.equals(newTown)) return;
+        Plot plot = plots.get(loc);
+        if (plot == null || plot.unreadable != null) return;
+        copyGroupIfPresent(oldTown, newTown, plot.land.group);
+        for (Parcel q : plot.quarters) {
+            copyGroupIfPresent(oldTown, newTown, q.group);
+        }
+    }
+
+    private void copyGroupIfPresent(UUID oldTown, UUID newTown, String groupName) {
+        if (groupName == null || groupName.isEmpty()) return;
+        Map<String, Boolean> src = groups.get(new GroupKey(oldTown, groupName));
+        if (src != null) {
+            groups.computeIfAbsent(new GroupKey(newTown, groupName), k -> new HashMap<>(src));
+        }
+    }
     public void disband(UUID town) { groups.keySet().removeIf(g -> g.town.equals(town)); }
     public void depart(UUID player) {
         // Embassy ownership can be held in a different city.

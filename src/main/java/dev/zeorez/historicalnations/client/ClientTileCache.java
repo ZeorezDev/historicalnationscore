@@ -13,13 +13,12 @@ import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Queue;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -57,16 +56,24 @@ public final class ClientTileCache {
 
     private record DecodedUpload(UUID mapId, TileKey key, NativeImage image, boolean missing) {}
 
+    private static final long IN_FLIGHT_TIMEOUT_MS = 3_000L;
+    private static final long MISSING_RETRY_MS = 6_000L;
+    private static final double NET_TOKENS_PER_MS = 0.090D; // 90 tiles/sec steady pace (under server 200/sec cap)
+    private static final double MAX_NET_BURST = 56.0D;
+
     private UUID activeMapId;
     private boolean diskCacheEnabled = true;
     private int maxCachedTiles = 256;
     private long texCounter = 0L;
 
     private final LinkedHashMap<TileKey, LoadedTile> gpuCache = new LinkedHashMap<>(128, 0.75f, true);
-    private final Set<TileKey> missingTiles = new HashSet<>();
-    private final Set<TileKey> inFlight = new HashSet<>();
+    private final Map<TileKey, Long> missingUntilMs = new HashMap<>();
+    private final Map<TileKey, Long> inFlightSinceMs = new HashMap<>();
     private final Queue<DecodedUpload> uploadQueue = new ConcurrentLinkedQueue<>();
-    private int requestsThisTick = 0;
+    private int diskLoadsThisFrame = 0;
+    private int netRequestsThisFrame = 0;
+    private double netTokens = MAX_NET_BURST;
+    private long lastTokenRefillMs = System.currentTimeMillis();
 
     public void configure(UUID mapId, boolean enableDiskCache, int maxTiles) {
         if (activeMapId == null || !activeMapId.equals(mapId)) {
@@ -74,8 +81,13 @@ public final class ClientTileCache {
             activeMapId = mapId;
         }
         this.diskCacheEnabled = enableDiskCache;
-        this.maxCachedTiles = Math.max(32, Math.min(4096, maxTiles));
+        this.maxCachedTiles = Math.max(48, Math.min(4096, maxTiles));
         trimLru();
+    }
+
+    /** Clears transient negative-cache entries when the map screen opens so newly rendered tiles appear immediately. */
+    public void resetTransientState() {
+        missingUntilMs.clear();
     }
 
     public UUID activeMapId() {
@@ -87,21 +99,59 @@ public final class ClientTileCache {
     }
 
     public void beginFrame() {
-        requestsThisTick = 0;
+        long now = System.currentTimeMillis();
+        long elapsed = Math.max(0L, now - lastTokenRefillMs);
+        lastTokenRefillMs = now;
+        netTokens = Math.min(MAX_NET_BURST, netTokens + elapsed * NET_TOKENS_PER_MS);
+        diskLoadsThisFrame = 0;
+        netRequestsThisFrame = 0;
+
+        if (!inFlightSinceMs.isEmpty()) {
+            inFlightSinceMs.entrySet().removeIf(e -> now - e.getValue() >= IN_FLIGHT_TIMEOUT_MS);
+        }
+        if (!missingUntilMs.isEmpty()) {
+            missingUntilMs.entrySet().removeIf(e -> now >= e.getValue());
+        }
+
         int uploads = 0;
         DecodedUpload item;
-        while (uploads < 8 && (item = uploadQueue.poll()) != null) {
+        while (uploads < 16 && (item = uploadQueue.poll()) != null) {
             if (activeMapId == null || !activeMapId.equals(item.mapId())) {
                 if (item.image() != null) item.image().close();
                 continue;
             }
-            inFlight.remove(item.key());
+            inFlightSinceMs.remove(item.key());
             if (item.missing() || item.image() == null) {
-                missingTiles.add(item.key());
+                missingUntilMs.put(item.key(), now + MISSING_RETRY_MS);
                 continue;
             }
+            missingUntilMs.remove(item.key());
             uploadToGpu(item.key(), item.image());
             uploads++;
+        }
+    }
+
+    /** Returns an already-uploaded GPU texture for (lod, tx, tz) without triggering I/O or network requests. */
+    public ResourceLocation peekLoaded(int lod, int tx, int tz) {
+        LoadedTile loaded = gpuCache.get(new TileKey(lod, tx, tz));
+        return loaded != null ? loaded.location() : null;
+    }
+
+    /** Proactively warms the coarse planetary z7 overview tiles (bounded to <= 16 tiles) for instant World View. */
+    public void preloadWorldOverview(MapCalibration cal) {
+        if (activeMapId == null || cal == null) return;
+        int rootLod = MapCalibration.MAX_LOD;
+        int minTx = Math.max(-4, MapCalibration.blockToTile(cal.minBlockX(), rootLod));
+        int maxTx = Math.min(3, MapCalibration.blockToTile(cal.maxBlockX(), rootLod));
+        int minTz = Math.max(-2, MapCalibration.blockToTile(cal.minBlockZ(), rootLod));
+        int maxTz = Math.min(1, MapCalibration.blockToTile(cal.maxBlockZ(), rootLod));
+        for (int tz = minTz; tz <= maxTz; tz++) {
+            for (int tx = minTx; tx <= maxTx; tx++) {
+                TileKey key = new TileKey(rootLod, tx, tz);
+                if (!gpuCache.containsKey(key)) {
+                    requestTileIfNeeded(key);
+                }
+            }
         }
     }
 
@@ -150,8 +200,8 @@ public final class ClientTileCache {
         if (activeMapId == null || !activeMapId.equals(pkt.mapId())) return;
         TileKey key = new TileKey(pkt.lod(), pkt.tx(), pkt.tz());
         if (!pkt.exists() || pkt.pngBytes().length == 0) {
-            inFlight.remove(key);
-            missingTiles.add(key);
+            inFlightSinceMs.remove(key);
+            missingUntilMs.put(key, System.currentTimeMillis() + MISSING_RETRY_MS);
             return;
         }
         UUID mapId = activeMapId;
@@ -177,26 +227,30 @@ public final class ClientTileCache {
     }
 
     private void requestTileIfNeeded(TileKey key) {
-        if (missingTiles.contains(key) || inFlight.contains(key)) return;
-        if (requestsThisTick >= 10) return;
-        requestsThisTick++;
-        inFlight.add(key);
+        long now = System.currentTimeMillis();
+        Long retryAt = missingUntilMs.get(key);
+        if (retryAt != null && now < retryAt) return;
+        Long startedAt = inFlightSinceMs.get(key);
+        if (startedAt != null && now - startedAt < IN_FLIGHT_TIMEOUT_MS) return;
 
         UUID mapId = activeMapId;
         Path diskFile = diskCacheEnabled ? diskTilePath(mapId, key) : null;
 
         if (diskFile != null && Files.isRegularFile(diskFile)) {
+            if (diskLoadsThisFrame >= 24) return;
+            diskLoadsThisFrame++;
+            inFlightSinceMs.put(key, now);
             CompletableFuture.runAsync(() -> {
                 try {
                     byte[] bytes = Files.readAllBytes(diskFile);
                     NativeImage img = NativeImage.read(new ByteArrayInputStream(bytes));
                     uploadQueue.add(new DecodedUpload(mapId, key, img, false));
                 } catch (Exception ex) {
-                    // Corrupt cached file: delete and fall back to network request
+                    // Corrupt cached file: delete and fall back to network request on next frame
                     try { Files.deleteIfExists(diskFile); } catch (Exception ignored) {}
                     Minecraft.getInstance().execute(() -> {
                         if (mapId.equals(activeMapId)) {
-                            MapNetwork.CHANNEL.sendToServer(new MapNetwork.TileRequestPacket(mapId, key.lod(), key.tx(), key.tz()));
+                            inFlightSinceMs.remove(key);
                         }
                     });
                 }
@@ -204,6 +258,10 @@ public final class ClientTileCache {
             return;
         }
 
+        if (netRequestsThisFrame >= 10 || netTokens < 1.0D) return;
+        netRequestsThisFrame++;
+        netTokens -= 1.0D;
+        inFlightSinceMs.put(key, now);
         MapNetwork.CHANNEL.sendToServer(new MapNetwork.TileRequestPacket(mapId, key.lod(), key.tx(), key.tz()));
     }
 
@@ -222,9 +280,14 @@ public final class ClientTileCache {
     }
 
     private void trimLru() {
+        int pinnedRootCount = 0;
         Iterator<Map.Entry<TileKey, LoadedTile>> it = gpuCache.entrySet().iterator();
         while (gpuCache.size() > maxCachedTiles && it.hasNext()) {
             Map.Entry<TileKey, LoadedTile> eldest = it.next();
+            if (eldest.getKey().lod() == MapCalibration.MAX_LOD && pinnedRootCount < 16) {
+                pinnedRootCount++;
+                continue;
+            }
             eldest.getValue().release();
             it.remove();
         }
@@ -235,8 +298,10 @@ public final class ClientTileCache {
             tile.release();
         }
         gpuCache.clear();
-        missingTiles.clear();
-        inFlight.clear();
+        missingUntilMs.clear();
+        inFlightSinceMs.clear();
+        netTokens = MAX_NET_BURST;
+        lastTokenRefillMs = System.currentTimeMillis();
         DecodedUpload pending;
         while ((pending = uploadQueue.poll()) != null) {
             if (pending.image() != null) pending.image().close();

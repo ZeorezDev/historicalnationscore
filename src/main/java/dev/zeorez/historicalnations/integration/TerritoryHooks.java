@@ -28,7 +28,24 @@ public final class TerritoryHooks implements IClaimsManagerListenerAPI, IChunkAc
     private static final ChunkAccessOverride CITIZEN = new ChunkAccessOverride(ChunkAccessOverrideType.ALLOW);
     private static final ClaimActionPermissionOverride OCCUPIED = new ClaimActionPermissionOverride(
             ClaimActionPermissionOverrideType.FORBID, Component.translatable("historical_nations.land_occupied"));
+    private static final ClaimActionPermissionOverride OUTSIDE_WORLD = new ClaimActionPermissionOverride(
+            ClaimActionPermissionOverrideType.FORBID, Component.translatable("historical_nations.outside_world_bounds"));
+    private static final ThreadLocal<Boolean> IN_ANNEXATION_TRANSFER = ThreadLocal.withInitial(() -> false);
+    private static final ThreadLocal<Boolean> SCOPED_WAR_FLAG_ACCESS = ThreadLocal.withInitial(() -> false);
     private final MinecraftServer server;
+
+    public static void runInAnnexationTransfer(Runnable task) {
+        IN_ANNEXATION_TRANSFER.set(true);
+        try {
+            task.run();
+        } finally {
+            IN_ANNEXATION_TRANSFER.set(false);
+        }
+    }
+
+    public static void setScopedWarFlagAccess(boolean allowed) {
+        SCOPED_WAR_FLAG_ACCESS.set(allowed);
+    }
 
     private TerritoryHooks(MinecraftServer server) { this.server = server; }
 
@@ -52,7 +69,16 @@ public final class TerritoryHooks implements IClaimsManagerListenerAPI, IChunkAc
         var link = data.territory(new Location(dim, x, z));
         if (link == null || !link.owner().equals(config.getPlayerId()) || link.subIndex() != config.getSubIndex()
                 || !TownTerritories.profileName(link.town()).equals(config.getSubId())
-                || config.isBeingDeleted() || link.owner().equals(accessor)
+                || config.isBeingDeleted()) return current;
+
+        if (Boolean.TRUE.equals(SCOPED_WAR_FLAG_ACCESS.get())) {
+            var opac = ServerData.from(server);
+            if (TownTerritories.matches(link, opac.getServerClaimsManager().get(dim, x, z))) {
+                return CITIZEN;
+            }
+        }
+
+        if (link.owner().equals(accessor)
                 || !data.getPlayerTown(accessor).map(t -> t.id().equals(link.town())).orElse(false)) return current;
 
         var opac = ServerData.from(server);
@@ -70,6 +96,10 @@ public final class TerritoryHooks implements IClaimsManagerListenerAPI, IChunkAc
     public ClaimActionPermissionOverride overrideClaimingActionPermission(UUID actor, ResourceLocation dim,
             int x, int z, ClaimingAction action, IServerClaimsManagerAPI claims,
             ClaimActionPermissionOverride current, MinecraftServer server) {
+        if (action == ClaimingAction.CLAIM
+                && !dev.zeorez.historicalnations.map.WorldBoundsEnforcer.isChunkInsideBounds(server, dim, x, z)) {
+            return OUTSIDE_WORLD;
+        }
         var link = WorldRegistry.get(server).territory(new Location(dim, x, z));
         if (link != null && !link.owner().equals(actor) && TownTerritories.matches(link, claims.get(dim, x, z)))
             return OCCUPIED;
@@ -78,6 +108,7 @@ public final class TerritoryHooks implements IClaimsManagerListenerAPI, IChunkAc
 
     @Override
     public void onChunkChange(ResourceLocation dim, int x, int z, IPlayerChunkClaimAPI claim) {
+        if (Boolean.TRUE.equals(IN_ANNEXATION_TRANSFER.get())) return;
         var pos = new Location(dim, x, z);
         var data = WorldRegistry.get(server);
         var link = data.territory(pos);

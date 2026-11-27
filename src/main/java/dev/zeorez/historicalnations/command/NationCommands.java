@@ -44,6 +44,9 @@ public final class NationCommands {
         dispatcher.register(literal("hnc").executes(run(c ->
                 PanelNetwork.open(c.player, View.HOME, null) ? null : msg("panel_help"))));
 
+        dispatcher.register(literal("hnc").then(literal("admin").requires(s -> s.hasPermission(4))
+                .then(literal("cities").executes(run(c -> dev.zeorez.historicalnations.gui.CityNetwork.open(c.player)
+                        ? null : msg("panel_help"))))));
         var mapCmd = literal("map").executes(run(c -> {
             if (!TerritoryConfig.MAP_ENABLED.get()) return msg("map_disabled");
             return MapNetwork.requestClientOpen(c.player, FocusKind.PLAYER, null, 0, 0) ? null : msg("map_client_required");
@@ -134,6 +137,22 @@ public final class NationCommands {
             c.data.renameTown(c.id(), value);
             return msg("updated");
         }));
+        town.then(named("spawn", (c, name) -> {
+            Town target = c.data.namedTown(name);
+            c.land().teleportToTownSpawn(c.player, target, c.command.getSource().hasPermission(2));
+            return msg("town_spawned", target.name());
+        }).executes(run(c -> {
+            Town home = c.data.home(c.id());
+            c.land().teleportToTownSpawn(c.player, home, c.command.getSource().hasPermission(2));
+            return msg("town_spawned", home.name());
+        })));
+        Action setTownSpawnAction = c -> {
+            var sp = c.land().setTownSpawn(c.player);
+            var pos = sp.blockPos();
+            return msg("town_spawn_set", c.data.home(c.id()).name(), pos.getX(), pos.getY(), pos.getZ());
+        };
+        town.then(literal("setspawn").executes(run(setTownSpawnAction)));
+        town.then(literal("set").then(literal("spawn").executes(run(setTownSpawnAction))));
         dispatcher.register(town);
 
         var nation = literal("nation");
@@ -170,6 +189,43 @@ public final class NationCommands {
         nation.then(named("color", (c, value) -> {
             c.data.setNationColor(c.id(), NationPalette.parseHex(value));
             return msg("updated");
+        }));
+        nation.then(named("spawn", (c, name) -> {
+            Nation target = c.data.namedNation(name);
+            c.land().teleportToNationSpawn(c.player, target, c.command.getSource().hasPermission(2));
+            return msg("nation_spawned", target.name());
+        }).executes(run(c -> {
+            Nation country = c.data.country(c.id());
+            c.land().teleportToNationSpawn(c.player, country, c.command.getSource().hasPermission(2));
+            return msg("nation_spawned", country.name());
+        })));
+        Action setNationSpawnAction = c -> {
+            var sp = c.land().setNationSpawn(c.player);
+            var pos = sp.blockPos();
+            return msg("nation_spawn_set", c.data.country(c.id()).name(), pos.getX(), pos.getY(), pos.getZ());
+        };
+        nation.then(literal("setspawn").executes(run(setNationSpawnAction)));
+        nation.then(literal("set").then(literal("spawn").executes(run(setNationSpawnAction))));
+        nation.then(named("ally", (c, name) -> {
+            Nation target = c.data.namedNation(name);
+            boolean formed = c.data.allyNation(c.id(), target);
+            UUID targetLeader = c.data.getTownById(target.capitalTown()).map(Town::mayor).orElse(null);
+            Nation own = c.data.country(c.id());
+            if (formed) {
+                if (targetLeader != null) c.notifyPlayer(targetLeader, msg("alliance_formed", own.name()));
+                return msg("alliance_formed", target.name());
+            } else {
+                if (targetLeader != null) c.notifyPlayer(targetLeader, msg("alliance_invite_received", own.name()));
+                return msg("alliance_invite_sent", target.name());
+            }
+        }));
+        nation.then(named("unally", (c, name) -> {
+            Nation target = c.data.namedNation(name);
+            Nation own = c.data.country(c.id());
+            c.data.unallyNation(c.id(), target);
+            UUID targetLeader = c.data.getTownById(target.capitalTown()).map(Town::mayor).orElse(null);
+            if (targetLeader != null) c.notifyPlayer(targetLeader, msg("alliance_broken", own.name()));
+            return msg("alliance_broken", target.name());
         }));
         dispatcher.register(nation);
     }
@@ -227,7 +283,9 @@ public final class NationCommands {
                 throw GoldCosts.insufficientGold(cost, GoldCosts.countGold(player));
             }
             try {
-                return data.createNation(id(), name);
+                Nation created = data.createNation(id(), name);
+                land().initDefaultNationSpawn(player, created);
+                return created;
             } catch (RuntimeException ex) {
                 if (cost > 0) GoldCosts.giveGold(player, cost);
                 throw ex;

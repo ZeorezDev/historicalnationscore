@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'dev.zeorez.historicalnations'
-version = '9.0.0'
+version = '11.0.0'
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 sourceSets {
@@ -27,7 +27,12 @@ minecraft {
             def testPlayer = project.findProperty('hnTestClient')
             if (testPlayer) {
                 if (!(testPlayer in ['HnNetA', 'HnNetB'])) throw new GradleException('Use HnNetA or HnNetB')
-                workingDirectory project.file("run-${testPlayer}")
+                if (project.hasProperty('hnCityWidgetTest')) {
+                    workingDirectory project.file("build/city-widget-client")
+                    property 'hn.test.cityWidgets', 'true'
+                } else {
+                    workingDirectory project.file("run-${testPlayer}")
+                }
                 mods { hn_integration_tests { source sourceSets.integration } }
                 property 'hn.test.client', testPlayer
                 if (project.hasProperty('hnPanelTest')) property 'hn.test.panel', 'true'
@@ -62,6 +67,7 @@ jar.finalizedBy('reobfJar')
 // A separately packaged fixture exercises the release JAR on a stock dedicated server.
 tasks.register('integrationJar', Jar) {
     from sourceSets.integration.output
+    manifest.attributes('MixinConfigs': 'hn_test.mixins.json')
     archiveBaseName = 'historical_nations-integration-tests'
     destinationDirectory = layout.buildDirectory.dir('integration')
 }

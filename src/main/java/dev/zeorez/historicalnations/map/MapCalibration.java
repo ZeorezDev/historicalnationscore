@@ -26,6 +26,7 @@ public record MapCalibration(
         ResourceLocation dimension,
         boolean requireCalibration,
         boolean calibrated,
+        boolean enforceWorldBounds,
         int minBlockX,
         int maxBlockX,
         int minBlockZ,
@@ -34,6 +35,48 @@ public record MapCalibration(
         int originBlockZ,
         double blocksPerDegree
 ) {
+    public MapCalibration(
+            int scale,
+            ResourceLocation dimension,
+            boolean requireCalibration,
+            boolean calibrated,
+            int minBlockX,
+            int maxBlockX,
+            int minBlockZ,
+            int maxBlockZ,
+            int originBlockX,
+            int originBlockZ,
+            double blocksPerDegree
+    ) {
+        this(scale, dimension, requireCalibration, calibrated, true,
+                minBlockX, maxBlockX, minBlockZ, maxBlockZ, originBlockX, originBlockZ, blocksPerDegree);
+    }
+
+    public int westBlockX() {
+        return Math.min(minBlockX, maxBlockX);
+    }
+
+    public int eastBlockX() {
+        return Math.max(minBlockX, maxBlockX);
+    }
+
+    public int northBlockZ() {
+        return Math.min(minBlockZ, maxBlockZ);
+    }
+
+    public int southBlockZ() {
+        return Math.max(minBlockZ, maxBlockZ);
+    }
+
+    public boolean containsBlock(int blockX, int blockZ) {
+        return blockX >= westBlockX() && blockX <= eastBlockX()
+                && blockZ >= northBlockZ() && blockZ <= southBlockZ();
+    }
+
+    public boolean containsChunk(int chunkX, int chunkZ) {
+        return chunkX >= (westBlockX() >> 4) && chunkX <= (eastBlockX() >> 4)
+                && chunkZ >= (northBlockZ() >> 4) && chunkZ <= (southBlockZ() >> 4);
+    }
     public static final int TILE_PIXELS = 256;
     public static final int MIN_LOD = 0;
     public static final int MAX_LOD = 7;
@@ -95,6 +138,7 @@ public record MapCalibration(
         buf.writeResourceLocation(dimension);
         buf.writeBoolean(requireCalibration);
         buf.writeBoolean(calibrated);
+        buf.writeBoolean(enforceWorldBounds);
         buf.writeInt(minBlockX);
         buf.writeInt(maxBlockX);
         buf.writeInt(minBlockZ);
@@ -108,6 +152,7 @@ public record MapCalibration(
         return new MapCalibration(
                 buf.readVarInt(),
                 buf.readResourceLocation(),
+                buf.readBoolean(),
                 buf.readBoolean(),
                 buf.readBoolean(),
                 buf.readInt(),
@@ -142,6 +187,7 @@ public record MapCalibration(
 
         int scale = TerritoryConfig.EARTH_SCALE.get();
         boolean reqCal = TerritoryConfig.REQUIRE_MAP_CALIBRATION.get();
+        boolean enforceBounds = TerritoryConfig.ENFORCE_WORLD_BOUNDS.get();
         int minX = TerritoryConfig.EARTH_MIN_BLOCK_X.get();
         int maxX = TerritoryConfig.EARTH_MAX_BLOCK_X.get();
         int minZ = TerritoryConfig.EARTH_MIN_BLOCK_Z.get();
@@ -171,7 +217,7 @@ public record MapCalibration(
                 LogUtils.getLogger().warn("Could not parse map calibration.json at {}", calFile, ex);
             }
         }
-        return new MapCalibration(scale, dim, reqCal, calibrated, minX, maxX, minZ, maxZ, origX, origZ, bpd);
+        return new MapCalibration(scale, dim, reqCal, calibrated, enforceBounds, minX, maxX, minZ, maxZ, origX, origZ, bpd);
     }
 
     public void writeCalibrationFile(Path tileRoot, String projectionNote) throws IOException {

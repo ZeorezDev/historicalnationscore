@@ -21,8 +21,8 @@ import static dev.zeorez.historicalnations.gui.PanelQuery.Sort;
 public final class PoliticalScreen extends Screen {
     private static final int GOLD=0xffe5c579, CREAM=0xffede6d5, MUTED=0xffa7b2b2, BORDER=0xff71654c;
     private static final int STEP=18;
-    private static final View[] NAV={View.TOWN,View.NATION,View.TOWNS,View.NATIONS,View.PLAYER};
-    private static final String[] NAV_KEYS={"my_town","my_nation","town_directory","nations","player"};
+    private static final View[] NAV={View.TOWN,View.NATION,View.TOWNS,View.NATIONS,View.WAR_DIPLOMACY,View.PLAYER};
+    private static final String[] NAV_KEYS={"my_town","my_nation","town_directory","nations","war_diplomacy","player"};
     private static final ResourceLocation SEALS=ResourceLocation.fromNamespaceAndPath("historical_nations","textures/gui/offices.png");
     private static int sequence;
     private static Screen pendingReturnScreen;
@@ -44,6 +44,11 @@ public final class PoliticalScreen extends Screen {
     public static void openDossier(View view, UUID targetId, Screen returnTo) {
         pendingReturnScreen = returnTo;
         PanelNetwork.CHANNEL.sendToServer(PanelQuery.open(view, targetId));
+    }
+    public static void refreshTown(UUID id) {
+        if (Minecraft.getInstance().screen instanceof PoliticalScreen screen && screen.query.view()==View.TOWN
+                && screen.data.hasUUID("subject") && id.equals(screen.data.getUUID("subject")))
+            screen.send(screen.request(View.TOWN,id,Sort.NAME,false,"",0));
     }
     public static void receive(PanelNetwork.Page page) {
         var mc=Minecraft.getInstance();
@@ -103,7 +108,7 @@ public final class PoliticalScreen extends Screen {
             g.fill(x,y,x+width,y+height,!active?0xff242a2b:isHoveredOrFocused()?0xff465350:selected?0xff3d443c:0xff2f3739);
             g.fill(x,y+height-1,x+width,y+height,selected?GOLD:BORDER);
             int start=x+4;
-            if(icon>=0) { g.blit(SEALS,start,y+3,(float)(icon*10),0,10,10,50,10); start+=13; }
+            if(icon>=0) { g.blit(SEALS,start,y+3,(float)(Math.min(4,icon)*10),0,10,10,50,10); start+=13; }
             String text=font.plainSubstrByWidth(getMessage().getString(),Math.max(0,x+width-start-2));
             g.drawString(font,text,start,y+4,!active?MUTED:selected?GOLD:CREAM,false);
         }
@@ -113,12 +118,13 @@ public final class PoliticalScreen extends Screen {
         int h=Math.min(66,(bottom-27-y-2*gap)/3);
         for(int i=0;i<NAV.length;i++) {
             final int icon=i;
-            boolean wide=i==4;
-            int tile=wide?w:(w-gap)/2;
-            int a=x+(wide?0:i%2*(tile+gap)), b=y+i/2*(h+gap);
+            int sealIdx = i==4 ? 1 : (i==5 ? 4 : i);
+            int tile=(w-gap)/2;
+            int a=x+(i%2)*(tile+gap), b=y+(i/2)*(h+gap);
             Component detail=switch(i) {
                 case 0,1 -> label(rows().getCompound(i).getList("cells",Tag.TAG_STRING).getString(1));
                 case 2,3 -> Component.translatable("hn.panel.records",data.getInt(i==2?"townCount":"nationCount"));
+                case 4 -> Component.translatable("hn.war.active_count",data.getInt("warCount"));
                 default -> minecraft.player.getDisplayName();
             };
             var tileButton=new Button(a,b,tile,h,tr(NAV_KEYS[i]),btn->navigate(NAV[icon],null),supplier->supplier.get()) {
@@ -127,7 +133,7 @@ public final class PoliticalScreen extends Screen {
                     g.fillGradient(xx,yy,xx+width,yy+height,isHoveredOrFocused()?0xff46524d:0xff343e3e,0xff252d2f);
                     g.renderOutline(xx,yy,width,height,isHoveredOrFocused()?GOLD:BORDER);
                     g.fill(xx+1,yy+2,xx+3,yy+height-2,0xffa99566);
-                    g.blit(SEALS,xx+8,cy-5,(float)(icon*10),0,10,10,50,10);
+                    g.blit(SEALS,xx+8,cy-5,(float)(sealIdx*10),0,10,10,50,10);
                     g.drawString(font,trim(getMessage().getString(),width-32),xx+24,cy-10,GOLD,false);
                     g.drawString(font,trim(detail.getString(),width-32),xx+24,cy+3,CREAM,false);
                 }
@@ -150,19 +156,23 @@ public final class PoliticalScreen extends Screen {
                     ()->PoliticalMapScreen.openWithFocus(FocusKind.PLAYER,null,0,0,this));
             homeCards(x,w); return;
         }
-        if(subjectId!=null && query.view()!=View.MEMBER && query.view()!=View.PLAYER) {
+        if(query.view()==View.WAR_DIPLOMACY) {
+            tab(left+panelWidth-134,top+5,85,Component.translatable("hn.war.open_war_map"),false,
+                    ()->PoliticalMapScreen.openInMode(dev.zeorez.historicalnations.TerritoryConfig.MapMode.WAR,this));
+        } else if(subjectId!=null && query.view()!=View.MEMBER && query.view()!=View.PLAYER) {
             boolean isNat=national();
             tab(left+panelWidth-132,top+5,83,Component.translatable("hn.map.view_on_map"),false,
                     ()->PoliticalMapScreen.openWithFocus(isNat?FocusKind.NATION:FocusKind.TOWN,subjectId,0,0,this));
         }
         for(int i=0;i<NAV.length;i++) {
-            View v=NAV[i]; int a=x+w*i/5,b=x+w*(i+1)/5;
-            addRenderableWidget(new Tab(a,top+25,b-a-1,tr(NAV_KEYS[i]),query.view()==v,i,()->navigate(v,null)));
+            View v=NAV[i]; int a=x+w*i/NAV.length,b=x+w*(i+1)/NAV.length;
+            int sealIdx = i==4 ? 1 : (i==5 ? 4 : i);
+            addRenderableWidget(new Tab(a,top+25,b-a-1,tr(NAV_KEYS[i]),query.view()==v,sealIdx,()->navigate(v,null)));
         }
         int y=top+50;
         if(editing!=null) { form(x,y,w); return; }
         UUID id=data.hasUUID("subject")?data.getUUID("subject"):null;
-        if(id!=null && (query.view()!=View.MEMBER && query.view()!=View.PLAYER)) {
+        if(id!=null && (query.view()!=View.MEMBER && query.view()!=View.PLAYER && query.view()!=View.WAR_DIPLOMACY)) {
             boolean nation=national();
             List<View> views=new ArrayList<>(List.of(nation?View.NATION:View.TOWN,nation?View.MEMBER_TOWNS:View.RESIDENTS));
             if(data.getBoolean("office")) views.add(nation?View.NATION_OFFICE:View.TOWN_OFFICE);
@@ -259,7 +269,7 @@ public final class PoliticalScreen extends Screen {
         g.fill(left+1,top+1,left+panelWidth-1,top+3,GOLD);
         g.fillGradient(left+2,top+3,left+panelWidth-2,top+24,0xff393b31,0xff272e2e);
         int seal = switch(query.view()) {
-            case NATION,NATION_OFFICE,MEMBER_TOWNS -> 1; case TOWNS -> 2; case NATIONS -> 3;
+            case NATION,NATION_OFFICE,MEMBER_TOWNS,WAR_DIPLOMACY -> 1; case TOWNS -> 2; case NATIONS -> 3;
             case MEMBER,PLAYER,RESIDENTS -> 4; default -> 0;
         };
         g.renderOutline(left+7,top+5,17,16,BORDER);
@@ -307,7 +317,8 @@ public final class PoliticalScreen extends Screen {
                     start+=17;
                 }
                 String raw=cells.getString(j),value=label(raw).getString();
-                int color=raw.equals("@online")?0xff91d2ad:raw.equals("@offline")?MUTED:j==0?CREAM:0xffc7d3d4;
+                int color=j==1 && cells.getString(0).equals("@rating") && !raw.startsWith("@") ? GOLD :
+                        raw.equals("@online")?0xff91d2ad:raw.equals("@offline")?MUTED:j==0?CREAM:0xffc7d3d4;
                 g.drawString(font,trim(value,end-start-2),start,y+5,color,false);
                 if(hover && mx>=at && mx<end && font.width(value)>end-start-2)
                     setTooltipForNextRenderPass(font.split(label(raw),Math.max(100,panelWidth-28)));
@@ -326,6 +337,10 @@ public final class PoliticalScreen extends Screen {
         int i=offset+(int)((y-body)/STEP);
         if(i>=rows().size()) return false;
         var r=rows().getCompound(i);
+        if(r.hasUUID("warId")) {
+            PeaceTreatyScreen.requestOpen(r.getUUID("warId"), this);
+            return true;
+        }
         if(r.hasUUID("id")) {
             int rowRight=left+panelWidth-7;
             if(directory() && x>=rowRight-16) {

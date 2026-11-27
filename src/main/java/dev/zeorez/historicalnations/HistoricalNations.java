@@ -17,18 +17,29 @@ public final class HistoricalNations {
     public HistoricalNations() {
         dev.zeorez.historicalnations.gui.PanelNetwork.register();
         dev.zeorez.historicalnations.map.MapNetwork.register();
+        dev.zeorez.historicalnations.war.WarNetwork.register();
         net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(
                 net.minecraftforge.api.distmarker.Dist.CLIENT,
                 () -> dev.zeorez.historicalnations.client.MapClientInit::initClientNetwork);
         ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, TerritoryConfig.SPEC);
         MinecraftForge.EVENT_BUS.register(dev.zeorez.historicalnations.property.QuarterCommands.class);
         MinecraftForge.EVENT_BUS.register(dev.zeorez.historicalnations.property.ParcelProtection.class);
+        MinecraftForge.EVENT_BUS.register(dev.zeorez.historicalnations.war.WarProtection.class);
         MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.core.DailyFinance::tick);
         MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.core.TradeCommands::tick);
         MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.core.DailyFinance::login);
+        MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.war.WarService::tick);
+        MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.war.WarService::onServerStopped);
         MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.map.PoliticalMapServer::tick);
         MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.map.PoliticalMapServer::onPlayerLogout);
         MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.map.PoliticalMapServer::onServerStopped);
+        MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.map.WorldBoundsEnforcer::onPlayerTick);
+        MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.map.WorldBoundsEnforcer::onPlayerLogin);
+        MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.map.WorldBoundsEnforcer::onPlayerRespawn);
+        MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.map.WorldBoundsEnforcer::onPlayerChangedDimension);
+        MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.map.WorldBoundsEnforcer::onPlayerLogout);
+        MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.map.WorldBoundsEnforcer::onServerStopped);
+        MinecraftForge.EVENT_BUS.addListener(dev.zeorez.historicalnations.map.WorldBoundsEnforcer::onEntityTeleport);
         MinecraftForge.EVENT_BUS.addListener(TerritoryHooks::register);
         MinecraftForge.EVENT_BUS.addListener(this::serverStarted);
         MinecraftForge.EVENT_BUS.addListener(this::registerCommands);
@@ -40,6 +51,7 @@ public final class HistoricalNations {
 
     private void registerCommands(RegisterCommandsEvent event) {
         NationCommands.register(event.getDispatcher());
+        dev.zeorez.historicalnations.command.WarCommands.register(event.getDispatcher());
         dev.zeorez.historicalnations.core.TradeCommands.register(event.getDispatcher());
         dev.zeorez.historicalnations.core.EconomyCommands.register(event.getDispatcher());
         dev.zeorez.historicalnations.property.PropertyCommands.register(event.getDispatcher());

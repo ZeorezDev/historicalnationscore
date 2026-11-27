@@ -4,14 +4,21 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import com.mojang.logging.LogUtils;
 import dev.zeorez.historicalnations.TerritoryConfig;
+import dev.zeorez.historicalnations.api.Nation;
 import dev.zeorez.historicalnations.api.Town;
 import dev.zeorez.historicalnations.core.GoldCosts;
+import dev.zeorez.historicalnations.core.SpawnPoint;
 import dev.zeorez.historicalnations.core.Territory;
 import dev.zeorez.historicalnations.core.Territory.Location;
 import dev.zeorez.historicalnations.core.WorldRegistry;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.FluidTags;
 import xaero.pac.common.claims.player.api.IPlayerChunkClaimAPI;
 import xaero.pac.common.claims.result.api.ClaimResult;
 import xaero.pac.common.server.ServerData;
@@ -85,6 +92,9 @@ public final class TownTerritories {
     public Town createTown(ServerPlayer player, String name) throws CommandSyntaxException {
         String clean = data.checkCreateTown(player.getUUID(), name);
         Location pos = location(player);
+        if (!dev.zeorez.historicalnations.map.WorldBoundsEnforcer.isChunkInsideBounds(server, pos.dimension(), pos.x(), pos.z())) {
+            throw error("outside_world_bounds");
+        }
         if (verified(pos) != null || claims.get(pos.dimension(), pos.x(), pos.z()) != null) throw error("land_occupied");
         if (TerritoryConfig.LIMIT.get() < 1) throw error("land_limit");
 
@@ -103,7 +113,9 @@ public final class TownTerritories {
             throw GoldCosts.insufficientGold(cost, GoldCosts.countGold(player));
         }
         try {
-            return data.createTownWithTerritory(townId, player.getUUID(), clean, pos, link);
+            Town created = data.createTownWithTerritory(townId, player.getUUID(), clean, pos, link);
+            data.putTownSpawn(created.id(), SpawnPoint.fromPlayer(player));
+            return created;
         } catch (RuntimeException ex) {
             if (cost > 0) GoldCosts.giveGold(player, cost);
             rollbackOpacClaim(player, pos);
@@ -114,6 +126,9 @@ public final class TownTerritories {
     public void claim(ServerPlayer player) throws CommandSyntaxException {
         Town town = mayor(player);
         Location pos = location(player);
+        if (!dev.zeorez.historicalnations.map.WorldBoundsEnforcer.isChunkInsideBounds(server, pos.dimension(), pos.x(), pos.z())) {
+            throw error("outside_world_bounds");
+        }
         if (verified(pos) != null || claims.get(pos.dimension(), pos.x(), pos.z()) != null) throw error("land_occupied");
         if (count(town.id()) >= TerritoryConfig.LIMIT.get()) throw error("land_limit");
 
@@ -174,15 +189,148 @@ public final class TownTerritories {
                 pos.x(), pos.z(), pos.x(), pos.z(), false);
     }
 
+    /** Test-only hook to simulate an OPAC claim failure mid-annexation and prove atomic rollback. */
+    private static volatile Location simulatedAnnexFailureChunk = null;
+
+    public static void setSimulatedAnnexFailureChunk(Location loc) {
+        simulatedAnnexFailureChunk = loc;
+    }
+
     public void unclaim(ServerPlayer player) throws CommandSyntaxException {
         Town town = mayor(player);
         Location pos = location(player);
+        if (data.wars.flagAtChunk(pos) != null || data.wars.occupationAt(pos) != null || data.wars.isTownInOngoingWar(town.id())) {
+            throw error("war_chunk_locked");
+        }
         Territory link = verified(pos);
         if (link == null || !town.id().equals(link.town()) || !player.getUUID().equals(link.owner()))
             throw error("land_not_yours");
         if (!release(player, town, pos)) throw error("land_not_yours");
         int refund = GoldCosts.unclaimRefund(link.paidGold());
         if (refund > 0) GoldCosts.giveGold(player, refund);
+    }
+
+    /**
+     * Two-phase transactional wartime annexation across OPAC + WorldRegistry + PropertyBook (Phases 7 & 16).
+     * - Charges ZERO Gold Ingots (war conquest transfer, not a vanilla claim purchase).
+     * - Preserves all Plots, 3D Quarters, boxes, permissions, and CityEvaluation scores.
+     * - Rolls back every modified chunk atomically if any OPAC or validation step fails.
+     */
+    public void annexChunksTransactionally(java.util.Map<Location, UUID> annexations) {
+        if (annexations == null || annexations.isEmpty()) return;
+        if (!server.isSameThread()) throw new IllegalStateException("Annexation must run on the server thread");
+        if (!ServerConfig.CONFIG.claimsEnabled.get()) {
+            throw new dev.zeorez.historicalnations.core.RuleViolation("annexation_failed");
+        }
+
+        var opac = ServerData.from(server);
+        var configMgr = opac.getPlayerConfigManager();
+
+        // Phase 1: Full pre-flight validation before any write
+        java.util.Map<UUID, Integer> incomingPerTown = new java.util.HashMap<>();
+        java.util.Map<UUID, Integer> incomingPerMayor = new java.util.HashMap<>();
+        for (var entry : annexations.entrySet()) {
+            Location loc = entry.getKey();
+            UUID targetTownId = entry.getValue();
+            Territory oldLink = verified(loc);
+            if (oldLink == null) {
+                throw new dev.zeorez.historicalnations.core.RuleViolation("annexation_failed");
+            }
+            Town targetTown = data.getTownById(targetTownId)
+                    .orElseThrow(() -> new dev.zeorez.historicalnations.core.RuleViolation("unknown_town"));
+            if (oldLink.town().equals(targetTown.id())) continue;
+            if (!data.properties.canTransferPlot(loc)) {
+                throw new dev.zeorez.historicalnations.core.RuleViolation("annexation_failed");
+            }
+            if (!opac.getServerClaimsManager().isClaimable(loc.dimension())) {
+                throw new dev.zeorez.historicalnations.core.RuleViolation("annexation_failed");
+            }
+
+            incomingPerTown.merge(targetTown.id(), 1, Integer::sum);
+            incomingPerMayor.merge(targetTown.mayor(), 1, Integer::sum);
+        }
+
+        int maxTownChunks = TerritoryConfig.LIMIT.get();
+        for (var e : incomingPerTown.entrySet()) {
+            if (count(e.getKey()) + e.getValue() > maxTownChunks) {
+                throw new dev.zeorez.historicalnations.core.RuleViolation("land_limit");
+            }
+        }
+
+        java.util.Map<UUID, Integer> targetSubIndexByTown = new java.util.HashMap<>();
+        for (UUID townId : incomingPerTown.keySet()) {
+            Town targetTown = data.getTownById(townId).orElseThrow();
+            var mayorCfg = configMgr.getLoadedConfig(targetTown.mayor());
+            if (mayorCfg == null || ServerPlayerConfigUtils.isOverEitherClaimingLimit(mayorCfg)) {
+                throw new dev.zeorez.historicalnations.core.RuleViolation("annexation_failed");
+            }
+            int currentOpacClaims = claims.hasPlayerInfo(targetTown.mayor())
+                    ? claims.getPlayerInfo(targetTown.mayor()).getClaimCount() : 0;
+            int maxOpacClaims = ServerConfig.CONFIG.maxPlayerClaims.get()
+                    + mayorCfg.getEffective(PlayerConfigOptions.BONUS_CHUNK_CLAIMS);
+            if (currentOpacClaims + incomingPerMayor.getOrDefault(targetTown.mayor(), 0) > maxOpacClaims) {
+                throw new dev.zeorez.historicalnations.core.RuleViolation("land_limit");
+            }
+            String subName = profileName(townId);
+            var sub = mayorCfg.getSubConfig(subName);
+            if (sub == null) {
+                if (mayorCfg.getSubCount() >= mayorCfg.getSubConfigLimit()) {
+                    throw new dev.zeorez.historicalnations.core.RuleViolation("land_profile");
+                }
+                sub = mayorCfg.createSubConfig(subName);
+            }
+            if (sub == null || sub.isBeingDeleted() || !sub.getEffective(PlayerConfigOptions.PROTECT_CLAIMED_CHUNKS)) {
+                throw new dev.zeorez.historicalnations.core.RuleViolation("land_profile");
+            }
+            targetSubIndexByTown.put(townId, sub.getSubIndex());
+        }
+
+        // Phase 2: Atomic staged execution with full rollback journal
+        record JournalEntry(Location loc, Territory oldLink) {}
+        java.util.List<JournalEntry> committed = new java.util.ArrayList<>();
+
+        TerritoryHooks.runInAnnexationTransfer(() -> {
+            try {
+                for (var entry : annexations.entrySet()) {
+                    Location loc = entry.getKey();
+                    UUID targetTownId = entry.getValue();
+                    Territory oldLink = data.territory(loc);
+                    Town targetTown = data.getTownById(targetTownId).orElseThrow();
+                    if (oldLink.town().equals(targetTown.id())) continue;
+
+                    if (loc.equals(simulatedAnnexFailureChunk)) {
+                        throw new IllegalStateException("Simulated OPAC annexation failure at " + loc);
+                    }
+
+                    int newSubIdx = targetSubIndexByTown.get(targetTown.id());
+                    claims.unclaim(loc.dimension(), loc.x(), loc.z());
+                    IPlayerChunkClaimAPI claimed = claims.claim(
+                            loc.dimension(), targetTown.mayor(), newSubIdx, loc.x(), loc.z(), false);
+                    Territory newLink = new Territory(targetTown.id(), targetTown.mayor(), newSubIdx, 0);
+                    if (claimed == null || !matches(newLink, claims.get(loc.dimension(), loc.x(), loc.z()))) {
+                        // Restore current chunk in OPAC before rolling back prior entries
+                        claims.unclaim(loc.dimension(), loc.x(), loc.z());
+                        claims.claim(loc.dimension(), oldLink.owner(), oldLink.subIndex(), loc.x(), loc.z(), false);
+                        throw new IllegalStateException("OPAC claim transfer verification failed at " + loc);
+                    }
+
+                    data.properties.copyReferencedPlotGroups(loc, oldLink.town(), targetTown.id());
+                    data.replaceTerritoryForAnnexation(loc, newLink);
+                    committed.add(new JournalEntry(loc, oldLink));
+                }
+            } catch (RuntimeException ex) {
+                LogUtils.getLogger().warn("Rolling back {} annexed chunk(s) due to error: {}", committed.size(), ex.getMessage());
+                for (int i = committed.size() - 1; i >= 0; i--) {
+                    JournalEntry je = committed.get(i);
+                    claims.unclaim(je.loc().dimension(), je.loc().x(), je.loc().z());
+                    claims.claim(je.loc().dimension(), je.oldLink().owner(), je.oldLink().subIndex(),
+                            je.loc().x(), je.loc().z(), false);
+                    data.replaceTerritoryForAnnexation(je.loc(), je.oldLink());
+                }
+                if (ex instanceof dev.zeorez.historicalnations.core.RuleViolation rv) throw rv;
+                throw new dev.zeorez.historicalnations.core.RuleViolation("annexation_failed");
+            }
+        });
     }
 
     private boolean release(ServerPlayer player, Town town, Location pos) throws CommandSyntaxException {
@@ -202,6 +350,128 @@ public final class TownTerritories {
         Town town = data.checkDisband(player.getUUID());
         for (var pos : data.territoryLocations(town.id())) release(player, town, pos);
         data.disbandTown(player.getUUID());
+    }
+
+    public SpawnPoint setTownSpawn(ServerPlayer player) throws CommandSyntaxException {
+        Town town = mayor(player);
+        validateStandingSpot(player);
+        Location pos = location(player);
+        Territory link = verified(pos);
+        if (link == null || !link.town().equals(town.id())) throw error("spawn_outside_town");
+        SpawnPoint sp = SpawnPoint.fromPlayer(player);
+        data.putTownSpawn(town.id(), sp);
+        return sp;
+    }
+
+    public SpawnPoint setNationSpawn(ServerPlayer player) throws CommandSyntaxException {
+        Nation nation = data.country(player.getUUID());
+        if (!data.isNationLeader(player.getUUID())) throw error("leader_only");
+        validateStandingSpot(player);
+        Location pos = location(player);
+        Territory link = verified(pos);
+        if (link == null || !data.getTownNation(link.town()).map(n -> n.id().equals(nation.id())).orElse(false)) {
+            throw error("spawn_outside_nation");
+        }
+        SpawnPoint sp = SpawnPoint.fromPlayer(player);
+        data.putNationSpawn(nation.id(), sp);
+        return sp;
+    }
+
+    public void initDefaultNationSpawn(ServerPlayer founder, Nation nation) {
+        Location pos = location(founder);
+        Territory link = verified(pos);
+        if (link != null && data.getTownNation(link.town()).map(n -> n.id().equals(nation.id())).orElse(false)) {
+            data.putNationSpawn(nation.id(), SpawnPoint.fromPlayer(founder));
+            return;
+        }
+        SpawnPoint capSpawn = data.townSpawn(nation.capitalTown());
+        if (capSpawn != null) {
+            Territory capLink = verified(capSpawn.chunkLocation());
+            if (capLink != null && capLink.town().equals(nation.capitalTown())) {
+                data.putNationSpawn(nation.id(), capSpawn);
+            }
+        }
+    }
+
+    public void teleportToTownSpawn(ServerPlayer player, Town targetTown, boolean adminBypass) throws CommandSyntaxException {
+        boolean sameTown = data.getPlayerTown(player.getUUID()).map(t -> t.id().equals(targetTown.id())).orElse(false);
+        boolean sameNation = !sameTown && data.getTownNation(targetTown.id())
+                .map(n -> data.isPlayerCitizenOfNation(player.getUUID(), n.id()))
+                .orElse(false);
+        if (!sameTown && !sameNation && !adminBypass) {
+            throw error("spawn_restricted");
+        }
+        SpawnPoint sp = data.townSpawn(targetTown.id());
+        if (sp == null) throw error("no_spawn");
+        Territory link = verified(sp.chunkLocation());
+        if (link == null || !link.town().equals(targetTown.id())) {
+            throw error("spawn_invalid");
+        }
+        safeTeleport(player, sp);
+    }
+
+    public void teleportToNationSpawn(ServerPlayer player, Nation targetNation, boolean adminBypass) throws CommandSyntaxException {
+        if (!data.isPlayerCitizenOfNation(player.getUUID(), targetNation.id()) && !adminBypass) {
+            throw error("spawn_restricted");
+        }
+        SpawnPoint sp = data.nationSpawn(targetNation.id());
+        if (sp == null) {
+            sp = data.townSpawn(targetNation.capitalTown());
+        }
+        if (sp == null) throw error("no_spawn");
+        Territory link = verified(sp.chunkLocation());
+        if (link == null || !data.getTownNation(link.town()).map(n -> n.id().equals(targetNation.id())).orElse(false)) {
+            throw error("spawn_invalid");
+        }
+        safeTeleport(player, sp);
+    }
+
+    private void validateStandingSpot(ServerPlayer player) throws CommandSyntaxException {
+        if (!player.isAlive() || player.isSpectator()) throw error("invalid_actor");
+        ServerLevel level = player.serverLevel();
+        BlockPos feet = player.blockPosition();
+        BlockPos head = feet.above();
+        if (feet.getY() < level.getMinBuildHeight() || head.getY() >= level.getMaxBuildHeight()) {
+            throw error("spawn_obstructed");
+        }
+        if (isHazardous(level, feet, head)) {
+            throw error("spawn_obstructed");
+        }
+    }
+
+    private void safeTeleport(ServerPlayer player, SpawnPoint sp) throws CommandSyntaxException {
+        if (!player.isAlive() || player.isSpectator()) throw error("invalid_actor");
+        ServerLevel targetLevel = server.getLevel(ResourceKey.create(Registries.DIMENSION, sp.dimension()));
+        if (targetLevel == null) throw error("spawn_invalid");
+        BlockPos feet = sp.blockPos();
+        BlockPos head = feet.above();
+        if (feet.getY() < targetLevel.getMinBuildHeight() || head.getY() >= targetLevel.getMaxBuildHeight()) {
+            throw error("spawn_obstructed");
+        }
+        if (isHazardous(targetLevel, feet, head)) {
+            throw error("spawn_obstructed");
+        }
+        if (player.isPassenger()) {
+            player.stopRiding();
+        }
+        player.fallDistance = 0.0F;
+        if (player instanceof net.minecraftforge.common.util.FakePlayer || player.connection == null) {
+            if (player.serverLevel() == targetLevel) {
+                player.moveTo(sp.x(), sp.y(), sp.z(), sp.yaw(), sp.pitch());
+            } else {
+                throw error("spawn_invalid");
+            }
+        } else {
+            player.teleportTo(targetLevel, sp.x(), sp.y(), sp.z(), sp.yaw(), sp.pitch());
+        }
+    }
+
+    private static boolean isHazardous(ServerLevel level, BlockPos feet, BlockPos head) {
+        return level.getFluidState(feet).is(FluidTags.LAVA)
+                || level.getFluidState(head).is(FluidTags.LAVA)
+                || level.getFluidState(feet.below()).is(FluidTags.LAVA)
+                || level.getBlockState(feet).isSuffocating(level, feet)
+                || level.getBlockState(head).isSuffocating(level, head);
     }
 
     private static CommandSyntaxException error(String key) {

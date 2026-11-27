@@ -17,11 +17,11 @@ import java.util.zip.InflaterInputStream;
 /** Shared server/client DTOs and bounded Deflate binary serialization for the Political World Map. */
 public final class MapModels {
     public static final int MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024;
-    public static final int MAX_COMPRESSED_PACKET_BYTES = 262_144;
+    public static final int MAX_COMPRESSED_PACKET_BYTES = 786_432;
 
     private MapModels() {}
 
-    public enum FocusKind { NONE, PLAYER, COORDS, TOWN, NATION }
+    public enum FocusKind { NONE, PLAYER, COORDS, TOWN, NATION, WAR_MODE }
 
     public record ServerMapSettings(
             boolean enabled,
@@ -32,10 +32,28 @@ public final class MapModels {
             boolean showNationNames,
             boolean enableTownInfoPopup,
             boolean enableSearch,
+            boolean lockCameraToBounds,
             boolean enableTileCache,
             int maxVisibleLabels,
             int maxCachedTiles
     ) {
+        public ServerMapSettings(
+                boolean enabled,
+                TerritoryConfig.MapMode defaultMode,
+                boolean showNationBorders,
+                boolean showTownBorders,
+                boolean showTownNames,
+                boolean showNationNames,
+                boolean enableTownInfoPopup,
+                boolean enableSearch,
+                boolean enableTileCache,
+                int maxVisibleLabels,
+                int maxCachedTiles
+        ) {
+            this(enabled, defaultMode, showNationBorders, showTownBorders, showTownNames, showNationNames,
+                    enableTownInfoPopup, enableSearch, true, enableTileCache, maxVisibleLabels, maxCachedTiles);
+        }
+
         public static ServerMapSettings fromConfig() {
             return new ServerMapSettings(
                     TerritoryConfig.MAP_ENABLED.get(),
@@ -46,6 +64,7 @@ public final class MapModels {
                     TerritoryConfig.SHOW_NATION_NAMES.get(),
                     TerritoryConfig.ENABLE_TOWN_INFO_POPUP.get(),
                     TerritoryConfig.ENABLE_MAP_SEARCH.get(),
+                    TerritoryConfig.LOCK_CAMERA_TO_BOUNDS.get(),
                     TerritoryConfig.ENABLE_TILE_CACHE.get(),
                     TerritoryConfig.MAX_VISIBLE_LABELS.get(),
                     TerritoryConfig.MAX_CACHED_TILES.get()
@@ -61,6 +80,7 @@ public final class MapModels {
             b.writeBoolean(showNationNames);
             b.writeBoolean(enableTownInfoPopup);
             b.writeBoolean(enableSearch);
+            b.writeBoolean(lockCameraToBounds);
             b.writeBoolean(enableTileCache);
             b.writeVarInt(maxVisibleLabels);
             b.writeVarInt(maxCachedTiles);
@@ -70,6 +90,7 @@ public final class MapModels {
             return new ServerMapSettings(
                     b.readBoolean(),
                     b.readEnum(TerritoryConfig.MapMode.class),
+                    b.readBoolean(),
                     b.readBoolean(),
                     b.readBoolean(),
                     b.readBoolean(),
@@ -130,8 +151,13 @@ public final class MapModels {
             int claimCount,
             int homeBlockX,
             int homeBlockZ,
-            boolean hasClaims
+            boolean hasClaims,
+            int level, int score, int rating
     ) {
+        public TownSummary withEvaluation(int level, int score, int rating) {
+            return new TownSummary(id, name, mayorName, nationId, population, claimCount, homeBlockX, homeBlockZ,
+                    hasClaims, level, score, rating);
+        }
         public void write(FriendlyByteBuf b) {
             b.writeUUID(id);
             b.writeUtf(name, 64);
@@ -142,6 +168,9 @@ public final class MapModels {
             b.writeInt(homeBlockX);
             b.writeInt(homeBlockZ);
             b.writeBoolean(hasClaims);
+            b.writeByte(level);
+            b.writeByte(score);
+            b.writeByte(rating);
         }
 
         public static TownSummary read(FriendlyByteBuf b) {
@@ -154,7 +183,7 @@ public final class MapModels {
                     b.readVarInt(),
                     b.readInt(),
                     b.readInt(),
-                    b.readBoolean()
+                    b.readBoolean(), b.readByte(), b.readByte(), b.readByte()
             );
         }
     }

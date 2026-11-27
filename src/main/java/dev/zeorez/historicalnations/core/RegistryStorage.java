@@ -23,6 +23,13 @@ final class RegistryStorage {
             row.putUUID("Mayor", town.mayor());
             if (registry.deputy(town.id()) != null) row.putUUID("Deputy", registry.deputy(town.id()));
             row.putString("Description", registry.description(town.id()));
+            if (registry.townSpawn(town.id()) != null) row.put("Spawn", registry.townSpawn(town.id()).save());
+            var history = registry.evaluations.get(town.id());
+            if (history != null) {
+                var reviews = new ListTag();
+                history.forEach(review -> reviews.add(review.fields(true)));
+                row.put("CityEvaluations", reviews);
+            }
             towns.add(row);
         }
         ListTag nations = new ListTag();
@@ -30,6 +37,7 @@ final class RegistryStorage {
             CompoundTag row = identity(nation.id(), nation.name());
             row.putUUID("Capital", nation.capitalTown());
             row.putInt("Color", registry.nationColor(nation.id()));
+            if (registry.nationSpawn(nation.id()) != null) row.put("Spawn", registry.nationSpawn(nation.id()).save());
             nations.add(row);
         }
         root.putUUID("MapId", registry.mapId);
@@ -53,6 +61,7 @@ final class RegistryStorage {
         registry.properties.save(root);
         registry.ledger.save(root);
         registry.trade.save(root);
+        registry.wars.save(root);
         return root;
     }
 
@@ -102,7 +111,15 @@ final class RegistryStorage {
                 continue;
             }
             registry.towns.put(town.id(), town);
+            for (Tag item : row.getList("CityEvaluations", Tag.TAG_COMPOUND)) {
+                var review = CityEvaluation.load((CompoundTag) item);
+                registry.evaluations.computeIfAbsent(town.id(), key -> new ArrayList<>()).add(review);
+            }
             registry.playerTowns.put(town.mayor(), town.id());
+            if (row.contains("Spawn", Tag.TAG_COMPOUND)) {
+                SpawnPoint sp = SpawnPoint.load(row.getCompound("Spawn"));
+                if (sp != null) registry.townSpawns.put(town.id(), sp);
+            }
         }
         for (Tag entry : root.getList("Nations", Tag.TAG_COMPOUND)) {
             CompoundTag row = (CompoundTag) entry;
@@ -124,6 +141,10 @@ final class RegistryStorage {
             } else {
                 registry.nationColors.put(nation.id(), NationPalette.pickDistinct(registry.nationColors.values(), nation.id()));
                 missingMapMetadata = true;
+            }
+            if (row.contains("Spawn", Tag.TAG_COMPOUND)) {
+                SpawnPoint sp = SpawnPoint.load(row.getCompound("Spawn"));
+                if (sp != null) registry.nationSpawns.put(nation.id(), sp);
             }
         }
         readLinks(root, "Citizens", (player, town) -> {
@@ -175,6 +196,7 @@ final class RegistryStorage {
         registry.properties.load(root);
         registry.ledger.load(root);
         registry.trade.load(root);
+        registry.wars.load(root);
         if (missingMapMetadata || (!root.contains("Plots") && !registry.territories.isEmpty())) registry.setDirty();
         return registry;
     }

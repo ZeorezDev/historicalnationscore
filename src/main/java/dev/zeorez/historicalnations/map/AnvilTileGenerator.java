@@ -53,6 +53,7 @@ import java.util.zip.InflaterInputStream;
 public final class AnvilTileGenerator {
     private static final Logger LOG = LogUtils.getLogger();
     private static final Pattern REGION_NAME = Pattern.compile("^r\\.(-?\\d+)\\.(-?\\d+)\\.mca$");
+    private static final Pattern TILE_NAME = Pattern.compile("^(-?\\d+)_(-?\\d+)\\.png$");
     public static final int MC_1_20_1_DATA_VERSION = 3465;
 
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
@@ -90,6 +91,7 @@ public final class AnvilTileGenerator {
         CompletableFuture.runAsync(() -> {
             try {
                 renderWorldRegions(regionDir, outputRoot, cal, maxRadiusRegions);
+                WorldBoundsEnforcer.invalidate(server);
             } catch (Exception ex) {
                 LAST_STATUS = "error: " + ex.getMessage();
                 LOG.error("Background map tile generation failed", ex);
@@ -154,7 +156,8 @@ public final class AnvilTileGenerator {
             Files.createDirectories(dimDir.resolve("z" + lod));
         }
 
-        Set<Long> dirtyNextLod = new HashSet<>();
+        Set<Long> dirtyNextLod = collectExistingLod1Parents(dimDir.resolve("z1"));
+        Set<Long> batchDirty = new HashSet<>();
         int renderedCount = 0;
 
         for (RegionCoord reg : regions) {
@@ -162,13 +165,44 @@ public final class AnvilTileGenerator {
             if (renderSingleRegion(reg, dimDir)) {
                 renderedCount++;
                 // Region (rx, rz) corresponds 1:1 to LOD 1 tile (rx, rz), whose parent at LOD 2 is (rx >> 1, rz >> 1).
-                dirtyNextLod.add(packTile(Math.floorDiv(reg.rx(), 2), Math.floorDiv(reg.rz(), 2)));
+                long parent = packTile(Math.floorDiv(reg.rx(), 2), Math.floorDiv(reg.rz(), 2));
+                dirtyNextLod.add(parent);
+                batchDirty.add(parent);
+                if (batchDirty.size() >= 32) {
+                    buildPyramidFromLod2(dimDir, batchDirty);
+                    batchDirty.clear();
+                }
             }
             PROCESSED_REGIONS.incrementAndGet();
         }
 
-        // Build LOD 2..7 mipmap pyramid from LOD 1..6 tiles.
-        Set<Long> currentDirty = dirtyNextLod;
+        // Final full LOD 2..7 mipmap pyramid pass covering both newly rendered and pre-existing z1 tiles.
+        buildPyramidFromLod2(dimDir, dirtyNextLod);
+
+        calibration.writeCalibrationFile(tileRoot, "EQUIRECTANGULAR_MOTFE_1_500");
+        LAST_STATUS = "completed (" + renderedCount + " regions)";
+        return renderedCount;
+    }
+
+    private static Set<Long> collectExistingLod1Parents(Path z1Dir) {
+        Set<Long> parents = new HashSet<>();
+        if (!Files.isDirectory(z1Dir)) return parents;
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(z1Dir, "*.png")) {
+            for (Path entry : stream) {
+                Matcher m = TILE_NAME.matcher(entry.getFileName().toString());
+                if (!m.matches()) continue;
+                int tx = Integer.parseInt(m.group(1));
+                int tz = Integer.parseInt(m.group(2));
+                parents.add(packTile(Math.floorDiv(tx, 2), Math.floorDiv(tz, 2)));
+            }
+        } catch (IOException ex) {
+            LOG.debug("Could not scan existing z1 tiles in {}", z1Dir, ex);
+        }
+        return parents;
+    }
+
+    private static void buildPyramidFromLod2(Path dimDir, Set<Long> seedLod2) throws IOException {
+        Set<Long> currentDirty = new HashSet<>(seedLod2);
         for (int lod = 2; lod <= MapCalibration.MAX_LOD && !currentDirty.isEmpty(); lod++) {
             LAST_STATUS = "building pyramid z" + lod + " (" + currentDirty.size() + " tiles)";
             Set<Long> parentDirty = new HashSet<>();
@@ -181,10 +215,6 @@ public final class AnvilTileGenerator {
             }
             currentDirty = parentDirty;
         }
-
-        calibration.writeCalibrationFile(tileRoot, "EQUIRECTANGULAR_MOTFE_1_500");
-        LAST_STATUS = "completed (" + renderedCount + " regions)";
-        return renderedCount;
     }
 
     /**
@@ -491,10 +521,9 @@ public final class AnvilTileGenerator {
 
     private static int average4(int c0, int c1, int c2, int c3) {
         int[] cols = {c0, c1, c2, c3};
-        int count = 0, r = 0, g = 0, b = 0, a = 0;
+        int count = 0, r = 0, g = 0, b = 0;
         for (int c : cols) {
             int ca = (c >>> 24) & 0xFF;
-            a += ca;
             if (ca > 0) {
                 r += (c >> 16) & 0xFF;
                 g += (c >> 8) & 0xFF;
@@ -503,7 +532,9 @@ public final class AnvilTileGenerator {
             }
         }
         if (count == 0) return 0;
-        return ((a / 4) << 24) | ((r / count) << 16) | ((g / count) << 8) | (b / count);
+        // Preserve solid opacity whenever any sub-quadrant has generated terrain/water so islands,
+        // coastlines, and partial worlds never fade to alpha=0 across LOD z2..z7.
+        return 0xFF000000 | ((r / count) << 16) | ((g / count) << 8) | (b / count);
     }
 
     private static int clampByte(int v) {

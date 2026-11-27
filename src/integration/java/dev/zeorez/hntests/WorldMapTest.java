@@ -45,8 +45,10 @@ final class WorldMapTest {
         var dim = Level.OVERWORLD.location();
         var opacClaims = OpenPACServerAPI.get(server).getServerClaimsManager();
 
-        // 1. Verify default v9.0.0 config & 1:500 MOTFE Earth calibration math
+        // 1. Verify default v9.0.0+ config & 1:500 MOTFE Earth calibration math + world bounds defaults
         check(TerritoryConfig.MAP_ENABLED.get(), "politicalMap.enabled default true");
+        check(TerritoryConfig.LOCK_CAMERA_TO_BOUNDS.get(), "politicalMap.lockCameraToBounds default true");
+        check(TerritoryConfig.ENFORCE_WORLD_BOUNDS.get(), "earthMap.enforceWorldBounds default true");
         check(TerritoryConfig.EARTH_SCALE.get() == 500, "earthMap.scale default 500");
         check(TerritoryConfig.EARTH_MIN_BLOCK_X.get() == -36864 && TerritoryConfig.EARTH_MAX_BLOCK_X.get() == 36863, "1:500 X bounds");
         check(TerritoryConfig.EARTH_MIN_BLOCK_Z.get() == -18432 && TerritoryConfig.EARTH_MAX_BLOCK_Z.get() == 18431, "1:500 Z bounds");
@@ -148,6 +150,97 @@ final class WorldMapTest {
             s.command(s.d, "town rename Ragusa", "updated");
             s.command(s.d, "town rename Dubrovnik", "updated");
 
+            // 4b. Town Spawn & Nation Spawn verification (permissions, territory bounds, teleportation, unclaim invalidation)
+            // Non-mayor citizen cannot set town spawn; non-leader mayor cannot set nation spawn
+            var citizenBelgrade = s.player("HnBelgradeCit");
+            s.command(s.a, "town invite HnBelgradeCit", "invited");
+            s.command(citizenBelgrade, "town accept Belgrade", "town_joined");
+            citizenBelgrade.setPos(10 * 16 + 8, 80, -20 * 16 + 8);
+            s.command(citizenBelgrade, "town set spawn", "!mayor_only");
+            s.command(s.b, "nation set spawn", "!leader_only"); // Kumanovo mayor is not capital mayor
+
+            // Mayor cannot set town spawn outside their own verified town territory
+            s.a.setPos(13 * 16 + 8, 80, -20 * 16 + 8); // unclaimed gap chunk (13, -20)
+            s.command(s.a, "town set spawn", "!spawn_outside_town");
+            s.command(s.a, "nation set spawn", "!spawn_outside_nation");
+
+            // Mayor sets Belgrade town spawn in Belgrade's second chunk (11, -20) at (182.5, 80.0, -310.5)
+            s.a.setPos(11 * 16 + 6.5, 80.0, -20 * 16 + 9.5);
+            s.command(s.a, "town set spawn", "town_spawn_set");
+
+            // Nation leader sets Yugoslavia nation spawn inside member town Novi Sad (11, -21) via /nation setspawn
+            s.a.setPos(11 * 16 + 4.5, 80.0, -21 * 16 + 5.5);
+            s.command(s.a, "nation setspawn", "nation_spawn_set");
+
+            // Citizen teleports from far away to Belgrade town spawn (/town spawn) and Yugoslavia nation spawn (/nation spawn)
+            citizenBelgrade.setPos(500, 80, 500);
+            s.command(citizenBelgrade, "town spawn", "town_spawned");
+            check(Math.abs(citizenBelgrade.getX() - (11 * 16 + 6.5)) < 0.01
+                    && Math.abs(citizenBelgrade.getZ() - (-20 * 16 + 9.5)) < 0.01, "teleported to Belgrade town spawn");
+
+            s.command(citizenBelgrade, "nation spawn", "nation_spawned");
+            check(Math.abs(citizenBelgrade.getX() - (11 * 16 + 4.5)) < 0.01
+                    && Math.abs(citizenBelgrade.getZ() - (-21 * 16 + 5.5)) < 0.01, "teleported to Yugoslavia nation spawn");
+
+            // Independent outsider (Dubrovnik mayor d) CANNOT teleport to Belgrade or Yugoslavia spawn!
+            s.command(s.d, "town spawn Belgrade", "!spawn_restricted");
+            s.command(s.d, "nation spawn Kingdom of Yugoslavia", "!spawn_restricted");
+
+            // Unclaiming a town's spawn chunk invalidates teleporting until re-set!
+            GoldCosts.giveGold(s.d, 1);
+            s.d.setPos(7 * 16 + 8, 80, -18 * 16 + 8); // Dubrovnik claims (7, -18), sets spawn there, then unclaims it
+            s.command(s.d, "town claim", "land_claimed");
+            s.command(s.d, "town setspawn", "town_spawn_set");
+            s.command(s.d, "town unclaim", "land_released");
+            s.command(s.d, "town spawn", "!spawn_invalid");
+            // Re-set Dubrovnik spawn back inside its valid home chunk (6, -18)
+            s.d.setPos(6 * 16 + 8, 80, -18 * 16 + 8);
+            s.command(s.d, "town set spawn", "town_spawn_set");
+            s.d.setPos(0, 80, 0);
+            s.command(s.d, "t spawn", "town_spawned");
+            check(Math.abs(s.d.getX() - (6 * 16 + 8)) < 0.01, "/t spawn alias works");
+
+            // 4c. Rectangular Earth Map Boundary Enforcement (in-game movement, teleports, pearls, and claims)
+            dev.zeorez.historicalnations.map.WorldBoundsEnforcer.invalidate(server);
+            // Out-of-bounds movement east (+40,000 > +36,863) and north (-20,000 < -18,432) is clamped immediately
+            s.d.setPos(40_000.0, 80.0, -20_000.0);
+            check(dev.zeorez.historicalnations.map.WorldBoundsEnforcer.enforcePlayerPosition(s.d), "clamped out-of-bounds player");
+            check(Math.abs(s.d.getX() - 36_863.5) < 0.01 && Math.abs(s.d.getZ() - (-18_431.5)) < 0.01,
+                    "clamped strictly to 2:1 rectangular Earth corner (36863.5, -18431.5)");
+
+            // Ender pearl outside Earth bounds is canceled; command teleport is clamped to border
+            var pearlEvt = new net.minecraftforge.event.entity.EntityTeleportEvent.EnderPearl(s.d, -40_000.0, 80.0, 0.0, null, 0.0f, null);
+            dev.zeorez.historicalnations.map.WorldBoundsEnforcer.onEntityTeleport(pearlEvt);
+            check(pearlEvt.isCanceled(), "ender pearl outside Earth bounds canceled");
+
+            var tpEvt = new net.minecraftforge.event.entity.EntityTeleportEvent(s.d, -40_000.0, 80.0, 22_000.0);
+            dev.zeorez.historicalnations.map.WorldBoundsEnforcer.onEntityTeleport(tpEvt);
+            check(!tpEvt.isCanceled() && Math.abs(tpEvt.getTargetX() - (-36_863.5)) < 0.01
+                    && Math.abs(tpEvt.getTargetZ() - 18_431.5) < 0.01, "teleport clamped to (-36863.5, 18431.5)");
+
+            // Town claim & OPAC claim outside Earth bounds (chunk 2305, 0 -> blockX 36880 > 36863) are rejected without loading chunks
+            GoldCosts.giveGold(s.d, 2);
+            s.d.setPos(2305 * 16 + 8, 80.0, 8.0);
+            s.command(s.d, "town claim", "!outside_world_bounds");
+            check(opacClaims.tryToClaim(dim, s.d.getUUID(), 0, dim, 2305, 0, 2305, 0, false).getResultType()
+                            != xaero.pac.common.claims.result.api.ClaimResult.Type.SUCCESSFUL_CLAIM,
+                    "OPAC direct claim outside Earth bounds forbidden");
+            s.d.setPos(6 * 16 + 8, 80.0, -18 * 16 + 8);
+
+            // 4d. OP-only Right-Click Map Teleport verification (non-OP rejected, OP safely teleported & clamped)
+            double beforeNonOpX = s.d.getX();
+            check(!mapServer.handleMapTeleport(s.d, 320, -160), "non-OP map teleport rejected on server");
+            check(Math.abs(s.d.getX() - beforeNonOpX) < 0.01, "non-OP player position unchanged");
+
+            server.getPlayerList().op(s.a.getGameProfile());
+            try {
+                check(mapServer.handleMapTeleport(s.a, 320, -160), "OP map teleport accepted on server");
+                check(Math.abs(s.a.getX() - 320.5) < 0.01 && Math.abs(s.a.getZ() - (-159.5)) < 0.01,
+                        "OP teleported accurately to right-clicked map block (320.5, -159.5)");
+            } finally {
+                server.getPlayerList().deop(s.a.getGameProfile());
+            }
+
             // 5. Real Anvil (.mca) -> PNG Pyramid test on D:\HeartsOfSteel\MapTiles (using saved spawn region!)
             server.saveEverything(true, true, true);
             Path regionDir = server.getWorldPath(LevelResource.ROOT).resolve("region");
@@ -158,7 +251,24 @@ final class WorldMapTest {
             check(Files.isRegularFile(testTileDir.resolve("calibration.json")), "calibration.json written");
             for (int lod = 0; lod <= MapCalibration.MAX_LOD; lod++) {
                 try (var files = Files.list(dimFolder.resolve("z" + lod))) {
-                    check(files.anyMatch(p -> p.toString().endsWith(".png")), "PNG tile generated at z" + lod);
+                    var pngs = files.filter(p -> p.toString().endsWith(".png")).toList();
+                    check(!pngs.isEmpty(), "PNG tile generated at z" + lod);
+                    boolean hasOpaquePixel = false;
+                    for (Path png : pngs) {
+                        var img = javax.imageio.ImageIO.read(png.toFile());
+                        if (img == null) continue;
+                        outer:
+                        for (int y = 0; y < img.getHeight(); y++) {
+                            for (int x = 0; x < img.getWidth(); x++) {
+                                if (((img.getRGB(x, y) >>> 24) & 0xFF) == 255) {
+                                    hasOpaquePixel = true;
+                                    break outer;
+                                }
+                            }
+                        }
+                        if (hasOpaquePixel) break;
+                    }
+                    check(hasOpaquePixel, "World View opaque terrain pixel preserved at z" + lod);
                 }
             }
 
@@ -186,7 +296,7 @@ final class WorldMapTest {
                 UUID tid = new UUID(2000L, ti);
                 int baseCx = (ti % 50) * 20 - 500;
                 int baseCz = (ti / 50) * 20 - 200;
-                towns.add(new MapModels.TownSummary(tid, "Town_" + ti, "Mayor_" + ti, nid, 5, 25, baseCx * 16 + 8, baseCz * 16 + 8, true));
+                towns.add(new MapModels.TownSummary(tid, "Town_" + ti, "Mayor_" + ti, nid, 5, 25, baseCx * 16 + 8, baseCz * 16 + 8, true, 1, -1, 0));
                 for (int dx = 0; dx < 5; dx++) {
                     for (int dz = 0; dz < 5; dz++) {
                         claims.add(new MapModels.ClaimEntry(baseCx + dx, baseCz + dz, tid));
@@ -208,7 +318,7 @@ final class WorldMapTest {
     }
 
     /** Second server JVM process: verifies persistence of mapId, custom nation colors, capitals, and claims. */
-    void verify() {
+    void verify() throws Exception {
         var data = WorldRegistry.get(s.server);
         var snap = PoliticalMapServer.get(s.server).ensureSnapshot();
 
@@ -231,5 +341,12 @@ final class WorldMapTest {
                 "all town territories persisted");
         check(!snap.claims().containsKey(MapModels.packChunk(14, -19)), "unclaimed chunk stayed removed");
         check(!snap.claims().containsKey(MapModels.packChunk(12, -20)), "personal OPAC claim still excluded on restart");
+
+        // Verify town & nation spawns persisted across server restart
+        s.a.setPos(0, 80, 0);
+        s.command(s.a, "town spawn", "town_spawned");
+        check(Math.abs(s.a.getX() - (11 * 16 + 6.5)) < 0.01, "town spawn persisted across restart");
+        s.command(s.a, "n spawn", "nation_spawned");
+        check(Math.abs(s.a.getZ() - (-21 * 16 + 5.5)) < 0.01, "nation spawn persisted across restart");
     }
 }

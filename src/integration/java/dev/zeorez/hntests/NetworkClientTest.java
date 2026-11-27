@@ -25,7 +25,7 @@ public final class NetworkClientTest {
 
     @SubscribeEvent
     public static void tick(TickEvent.ClientTickEvent event) {
-        if (ACTOR.isEmpty() || event.phase != TickEvent.Phase.END) return;
+        if (ACTOR.isEmpty() || Boolean.getBoolean("hn.test.cityWidgets") || event.phase != TickEvent.Phase.END) return;
         var minecraft = Minecraft.getInstance();
         boolean ready = minecraft.getOverlay() == null && (minecraft.screen instanceof TitleScreen
                 || minecraft.screen instanceof DisconnectedScreen);

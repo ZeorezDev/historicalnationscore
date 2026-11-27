@@ -1,5 +1,24 @@
 # Sürüm geçmişi
 
+## 11.0.0 — Flag War & Territorial Conquest Update
+
+- Devletler arası resmî savaş ilanı (`/war declare <devlet>`), varsayılan **24 saatlik** hazırlık süresi (`preparationHours`), **48 saatlik** savaş sonrası ateşkes (`truceHours`), karşılıklı ittifaklar (`/nation ally <devlet>`, `/nation unally <devlet>`) ve müttefiklerin savaşa katılımı (`/war join <devlet>`) eklendi.
+- Zamanlanmış savaş saatleri (`[war.schedule]`: varsayılan `Europe/Istanbul` Cumartesi ve Pazar `18:00–23:00`) ve çevrimdışı savunma koruması + kasıtlı çıkışa karşı yapılandırılabilir tolerans süresi (`defenderLogoutGraceSeconds = 300`) eklendi. Savaş penceresi dışında yeni bayrak dikilemez ve aktif sayaçlar otomatik duraklatılır.
+- Nodes tarzı **War Capture Flag** çit ele geçirme sistemi eklendi: düşman sınır chunk'ına `minecraft:oak_fence` (veya yapılandırılan çit blokları) yerleştirildiğinde 3 bloklu savaş bayrağına (`çit + 10 aşamalı ilerleme yünü + meşale`) dönüşür, yakındaki oyunculara BossBar geri sayımı gösterilir ve `300` saniye sonunda chunk **OCCUPIED** (işgal) durumuna geçer.
+- Doğrudan gökyüzü erişimi, bina/quarter içi ve su altı engeli, bayrak çevresi inşaat/kova yasağı (`flagNoBuildRadius`), savunan oyuncunun veya patlamaların (TNT / Historical Artillery) eşya çoğaltmadan bayrağı imha etmesi ve şehir binaları ile sandıkların OPaC korumasının korunması sağlandı.
+- Cephe hattı ilerleme sistemi (`WarFrontier`) eklendi: yalnızca kendi sınırına, işgal edilen cepheye veya en fazla `3` sahipsiz wilderness chunk uzağındaki dış düşman sınırına saldırılabilir; iç bölgelere chunk atlama engellenir.
+- Çift taraflı sürüm kilitli **Peace Treaty GUI** (`/war peace <devlet>`) ve **iki aşamalı geri alınabilir (transactional) OPaC ilhak servisi** (`TownTerritories.annexChunksTransactionally`) eklendi. İlhak sırasında altın ücreti alınmaz; mevcut Plot, 3D Quarter ve v10.0.0 Şehir Gelişim Seviyesi / Yıldız değerlendirmeleri korunur. Herhangi bir OPaC hatasında tüm kısmi işlemler atomik olarak geri alınır.
+- `/hnc` yönetim paneline **Savaş ve Diplomasi (`WAR & DIPLOMACY`)** sekmesi, **Political World Map**'e **WAR MAP MODE** (`/war map`), diyagonal işgal tarama deseni, kesikli işgal sınırları, tıklanabilir aktif saldırı bayrağı simgeleri ve işgal altındaki kasaba sağ-tık bilgileri eklendi.
+- Dünya haritası kamera sınır kilidi (`lockCameraToBounds`), oyun içi `2:1` dikdörtgen Dünya sınırı koruyucusu (`WorldBoundsEnforcer`) ve OP sağ-tık harita ışınlanma kartı eklendi.
+
+## 10.0.0 — Urban Development & City Evaluation
+
+- OP 4 yöneticileri `/hnc admin cities` veya siyasi haritadaki şehir kartından değerlendirme açabilir. Rehber şehir, devlet, seviye ve yıldız filtrelerini, tarihe ve puana göre sıralamayı destekler.
+- Mimari (30), ulaşım (20), konut (20), kamu hizmetleri (20) ve tamamlanmışlık (10) puanları elle girilir. Önerilen yıldızı değiştirmek için gerekçe gerekir. Yönetici gelişim seviyesini ayrıca seçer.
+- Oyuncular şehir dosyasında kategori puanlarını, değerlendirme tarihini ve herkese açık özeti görür. Özel notlar ve sürümlü geçmiş yöneticilere açıktır. Eşzamanlı düzenlemelerde eski kopyanın kaydı reddedilir.
+- Harita, şehir isimlerini gelişim seviyesine ve yakınlaştırmaya göre gösterir. Bir değerlendirmede yalnızca ilgili şehir için güncelleme gönderilir.
+- v9 şehirleri ilk değerlendirmelerine kadar Yerleşim seviyesinde ve yıldızsız görünür. Kayıtlar kalıcı şehir kimliğine bağlıdır. Sunucu ve istemci modunu birlikte v10 sürümüne güncelleyin.
+
 ## 9.0.0 · Interactive Political World Map Update
 
 - Tam ekran etkileşimli **Political World Map** (`M` tuşu ve `/map` komutu) eklendi. 1930–1950 stratejik harita estetiğiyle 6 bağımsız katman (Terrain, Political, Nation Borders, Town Borders, Settlement Labels, Player Location) desteklenir.
@@ -9,6 +28,7 @@
 - Kalıcı devlet harita renkleri, `/nation color <#RRGGBB>`, `/nation setcapital <kasaba>`, `/town rename <ad>` ve `/nation rename <ad>` komutları ile sürüm numaralı sıkıştırılmış snapshot + canlı delta senkronizasyonu (`MapNetwork` / `PoliticalMapServer`) eklendi.
 - Claim edilmiş kasaba toprağına sağ tıklayınca açılan **Town Bilgi Kutucuğu** (`VIEW TOWN` ve tıklanabilir devlet başlığı), harita arama çubuğu (kasaba, devlet ve `X Z` koordinat arama) ve v8.0.0 yönetim ekranlarıyla çift yönlü `Haritada Göster` (`VIEW ON MAP`) entegrasyonu eklendi.
 - Sunucu kimliğine (`MapId`) göre yalıtılmış GPU (`DynamicTexture` LRU) ve disk tile önbelleği (`ClientTileCache`) ile `64×64` chunk uzamsal indeksleme (`ClientMapState`) eklendi.
+- `/town spawn`, `/town set spawn` (`/town setspawn`), `/nation spawn` ve `/nation set spawn` (`/nation setspawn`) komutları ile yönetim GUI (`OfficeActions`) kısayolları eklendi; spawn noktaları OPAC kasaba/devlet arazisi doğrulamasıyla kalıcı olarak saklanır.
 
 ## 8.0.0 · Political Management GUI Update
 

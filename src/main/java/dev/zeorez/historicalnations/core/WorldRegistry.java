@@ -16,7 +16,27 @@ import java.util.regex.Pattern;
 public final class WorldRegistry extends SavedData implements HistoricalNationsApi {
     public final dev.zeorez.historicalnations.property.PropertyBook properties =
             new dev.zeorez.historicalnations.property.PropertyBook(this);
+    public final dev.zeorez.historicalnations.war.WarBook wars =
+            new dev.zeorez.historicalnations.war.WarBook(this);
     PoliticalPanel.Counts directoryCounts;
+    final Map<UUID, List<CityEvaluation>> evaluations = new HashMap<>();
+
+    public CityEvaluation evaluation(UUID town) {
+        var history = evaluations.get(town);
+        return history == null || history.isEmpty() ? null : history.get(history.size() - 1);
+    }
+
+    public void evaluate(net.minecraft.server.level.ServerPlayer player, UUID town, int revision, CityEvaluation.Draft draft) {
+        if (!player.hasPermissions(4)) throw new RuleViolation("city_permission");
+        if (!towns.containsKey(town)) throw new RuleViolation("unknown_town");
+        draft.validate();
+        var history = evaluations.computeIfAbsent(town, key -> new ArrayList<>());
+        if (revision != history.size()) throw new RuleViolation("city_conflict");
+        history.add(new CityEvaluation(player.getUUID(), System.currentTimeMillis(), draft));
+        super.setDirty();
+        dev.zeorez.historicalnations.map.PoliticalMapServer.get(player.server).evaluationChanged(town, draft);
+        dev.zeorez.historicalnations.gui.PanelNetwork.refreshTown(player.server, town);
+    }
     private boolean mapDirty = true;
     UUID mapId = UUID.randomUUID();
     @Override
@@ -38,6 +58,8 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     final Map<UUID, Town> towns = new LinkedHashMap<>();
     final Map<UUID, Nation> nations = new LinkedHashMap<>();
     final Map<UUID, Integer> nationColors = new HashMap<>();
+    final Map<UUID, SpawnPoint> townSpawns = new HashMap<>();
+    final Map<UUID, SpawnPoint> nationSpawns = new HashMap<>();
     final Map<UUID, UUID> deputies = new HashMap<>();
     final Map<UUID, String> descriptions = new HashMap<>();
     final Map<UUID, UUID> playerTowns = new HashMap<>();
@@ -70,6 +92,24 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
             properties.remove(location);
             setDirty();
         }
+    }
+
+    /** Atomically replaces HNC territory ownership during verified wartime annexation while keeping plots/quarters intact. */
+    public void replaceTerritoryForAnnexation(Territory.Location location, Territory newTerritory) {
+        Territory old = territories.put(location, newTerritory);
+        if (old != null && !old.town().equals(newTerritory.town())) {
+            SpawnPoint tsp = townSpawns.get(old.town());
+            if (tsp != null && tsp.chunkLocation().equals(location)) {
+                townSpawns.remove(old.town());
+            }
+            getTownNation(old.town()).ifPresent(oldNat -> {
+                SpawnPoint nsp = nationSpawns.get(oldNat.id());
+                if (nsp != null && nsp.chunkLocation().equals(location)) {
+                    nationSpawns.remove(oldNat.id());
+                }
+            });
+        }
+        setDirty();
     }
 
     record Invitation(UUID issuer, UUID recipient) {}
@@ -178,6 +218,22 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     }
     public UUID deputy(UUID town) { return deputies.get(town); }
     public String description(UUID town) { return descriptions.getOrDefault(town, ""); }
+    public SpawnPoint townSpawn(UUID town) { return town == null ? null : townSpawns.get(town); }
+    public SpawnPoint nationSpawn(UUID nation) { return nation == null ? null : nationSpawns.get(nation); }
+
+    public void putTownSpawn(UUID townId, SpawnPoint spawn) {
+        require(towns.containsKey(townId), "unknown_town");
+        if (spawn == null) townSpawns.remove(townId);
+        else townSpawns.put(townId, spawn);
+        setDirty();
+    }
+
+    public void putNationSpawn(UUID nationId, SpawnPoint spawn) {
+        require(nations.containsKey(nationId), "unknown_nation");
+        if (spawn == null) nationSpawns.remove(nationId);
+        else nationSpawns.put(nationId, spawn);
+        setDirty();
+    }
 
     private Town administration(UUID actor) {
         Town town = home(actor);
@@ -241,6 +297,7 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     }
     public Town checkDisband(UUID actor) {
         Town town = mayorTown(actor);
+        require(!wars.isTownInOngoingWar(town.id()), "in_active_war");
         requireNonCapital(town);
         ledger.checkClose(Ledger.Account.town(town.id()), actor);
         return town;
@@ -251,8 +308,11 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
         ledger.close(Ledger.Account.town(town.id()), actor);
         deputies.remove(town.id());
         descriptions.remove(town.id());
+        townSpawns.remove(town.id());
         properties.disband(town.id());
+        wars.onTownDisbanded(town.id());
         towns.remove(town.id());
+        evaluations.remove(town.id());
         members(town.id()).forEach(properties::depart);
         playerTowns.values().removeIf(town.id()::equals);
         townNations.remove(town.id());
@@ -319,6 +379,7 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
         require(nation.id().equals(townNations.get(target.id())), "not_member_town");
         Nation updated = new Nation(nation.id(), nation.name(), target.id());
         nations.put(nation.id(), updated);
+        wars.ongoingWarsOfNation(nation.id()).forEach(w -> w.peaceDraft.resetApprovals());
         setDirty();
         return updated;
     }
@@ -329,6 +390,7 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     }
     public Nation inviteTown(UUID actor, Town target) {
         Nation nation = ledNation(actor);
+        require(!wars.isNationInOngoingWar(nation.id()), "in_active_war");
         require(!townNations.containsKey(target.id()), "already_in_nation");
         require(nationInvites.add(new Invitation(nation.id(), target.id())), "already_invited");
         setDirty();
@@ -337,6 +399,10 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     public void answerNation(UUID actor, Nation nation, boolean accept) {
         Town town = mayorTown(actor);
         require(!townNations.containsKey(town.id()), "already_in_nation");
+        if (accept) {
+            require(!wars.isNationInOngoingWar(nation.id()), "in_active_war");
+            require(!wars.isTownInOngoingWar(town.id()), "in_active_war");
+        }
         require(nationInvites.remove(new Invitation(nation.id(), town.id())), "no_invitation");
         if (accept) joinNation(town, nation);
         setDirty();
@@ -346,21 +412,40 @@ public final class WorldRegistry extends SavedData implements HistoricalNationsA
     }
     public void leaveNation(UUID actor) {
         Town town = mayorTown(actor);
-        country(actor);
+        Nation nation = country(actor);
+        require(!wars.isNationInOngoingWar(nation.id()), "in_active_war");
         requireNonCapital(town);
         townNations.remove(town.id());
         setDirty();
     }
     public void disbandNation(UUID actor) {
         Nation nation = ledNation(actor);
+        require(!wars.isNationInOngoingWar(nation.id()), "in_active_war");
         trade.available();
         ledger.close(Ledger.Account.nation(nation.id()), actor);
         trade.disband(nation.id());
+        wars.onNationDisbanded(nation.id());
         nations.remove(nation.id());
         nationColors.remove(nation.id());
+        nationSpawns.remove(nation.id());
         townNations.values().removeIf(nation.id()::equals);
         nationInvites.removeIf(i -> i.issuer().equals(nation.id()));
         setDirty();
+    }
+
+    /** Proposes or accepts a mutual diplomatic alliance between actor's nation and target nation. */
+    public boolean allyNation(UUID actor, Nation target) {
+        Nation own = ledNation(actor);
+        require(!own.id().equals(target.id()), "same_nation");
+        require(wars.findOngoingWarBetween(own.id(), target.id(), false).isEmpty(), "at_war");
+        return wars.proposeOrAcceptAlliance(own.id(), target.id());
+    }
+
+    /** Dissolves an alliance or pending alliance offer between actor's nation and target nation. */
+    public void unallyNation(UUID actor, Nation target) {
+        Nation own = ledNation(actor);
+        require(!own.id().equals(target.id()), "same_nation");
+        require(wars.removeAlliance(own.id(), target.id()), "not_allied");
     }
     static void require(boolean condition, String key) {
         if (!condition) throw new RuleViolation(key);

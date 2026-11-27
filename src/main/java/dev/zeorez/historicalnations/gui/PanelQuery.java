@@ -6,7 +6,7 @@ import java.util.UUID;
 /** Only navigation travels from the client. The server chooses the rows and allowed operations. */
 public record PanelQuery(View view, UUID target, Sort sort, boolean descending, String search,
                          int page, int size, int serial) {
-    public enum View { HOME, TOWNS, NATIONS, TOWN, NATION, RESIDENTS, MEMBER, MEMBER_TOWNS, PLAYER, TOWN_OFFICE, NATION_OFFICE }
+    public enum View { HOME, TOWNS, NATIONS, TOWN, NATION, RESIDENTS, MEMBER, MEMBER_TOWNS, PLAYER, TOWN_OFFICE, NATION_OFFICE, WAR_DIPLOMACY }
     public enum Sort { NAME, PEOPLE, TOWNS, LAND, TREASURY }
     public PanelQuery {
         if (page < 0 || size < 1 || size > 12 || search.length() > 32 || serial < 0 ||
